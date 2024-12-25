@@ -1,0 +1,22 @@
+name: test_gptq
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+  - defaults
+dependencies:
+  - python=3.12
+  - anaconda
+  - pip
+  - pip:
+      - easydict
+      - torch==2.5.1
+      - transformers==4.45.2
+      # Best to install manually
+      # - flashinfer==v0.1.6 # flashinfer-0.1.6+cu124torch2.4-cp312-cp312-linux_x86_64.whl
+
+      # for sglang
+      # - "sglang[all]"      # ==0.4.0.post2  with vllm==v0.6.4.post1
+
+      # for vllm
+      # - vllm               # == v0.6.5
