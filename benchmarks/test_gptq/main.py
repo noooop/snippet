@@ -385,12 +385,12 @@ def vllm_default_for_decoding():
 if __name__ == '__main__':
     print("For prefills")
     print("=" * 80)
-    #vllm_for_prefills()
+    vllm_for_prefills()
     sgl_for_prefills()
-    #vllm_default_for_prefills()
+    vllm_default_for_prefills()
 
     print("For decoding")
     print("=" * 80)
-    #vllm_for_decoding()
+    vllm_for_decoding()
     sgl_for_decoding()
-    #vllm_default_for_decoding()
+    vllm_default_for_decoding()
