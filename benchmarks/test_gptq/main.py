@@ -120,8 +120,7 @@ def benchmark_sgl(args):
                      mem_fraction_static=args.gpu_memory_utilization,
                      chunked_prefill_size=args.max_num_batched_tokens,
                      max_running_requests=args.max_num_seqs,
-                     disable_radix_cache=True,
-                     enforce_eager=args.enforce_eager)
+                     disable_radix_cache=True)
 
     sampling_params = dict(
         n=1,
@@ -386,12 +385,12 @@ def vllm_default_for_decoding():
 if __name__ == '__main__':
     print("For prefills")
     print("=" * 80)
-    vllm_for_prefills()
+    #vllm_for_prefills()
     sgl_for_prefills()
-    vllm_default_for_prefills()
+    #vllm_default_for_prefills()
 
     print("For decoding")
     print("=" * 80)
-    vllm_for_decoding()
+    #vllm_for_decoding()
     sgl_for_decoding()
-    vllm_default_for_decoding()
+    #vllm_default_for_decoding()
