@@ -18,21 +18,16 @@ rng = np.random.default_rng(seed=42)
 
 class VllmEncoder(mteb.Encoder):
 
-    def __init__(self, model, trust_remote_code: bool = True, **kwargs):
+    def __init__(self, model, dtype, trust_remote_code: bool = True, **kwargs):
         super().__init__()
         from vllm import LLM
 
         if model == "Alibaba-NLP/gte-Qwen2-1.5B-instruct":
             kwargs["hf_overrides"] = {"is_causal": True}
 
-        if model in ["jinaai/jina-embeddings-v3", "intfloat/multilingual-e5-small"]:
-            kwargs["dtype"] = "float32"
-
-        if model == "intfloat/multilingual-e5-large-instruct":
-            kwargs["dtype"] = "float32"
-
         self.model = LLM(model=model,
                          task="embed",
+                         dtype=dtype,
                          trust_remote_code=trust_remote_code,
                          **kwargs)
 
@@ -80,16 +75,17 @@ def get_st_main_score(model_name):
 
 def run(model_name, times=10):
     st_main_score = get_st_main_score(model_name)
-    encoder = VllmEncoder(model_name)
+    print(model_name, st_main_score)
 
-    scores = []
-    for i in range(times):
-        main_score = run_and_get_main_score(encoder)
-        scores.append(main_score
+    for dtype in ["float16", "bfloat16", "float32"]:
+        encoder = VllmEncoder(model_name, dtype=dtype)
 
-    )
+        scores = []
+        for i in range(times):
+            main_score = run_and_get_main_score(encoder)
+            scores.append(main_score)
 
-    print("main_score", model_name, st_main_score, np.mean(scores) - st_main_score, np.std(scores))
+        print(dtype, model_name, st_main_score, np.mean(scores) - st_main_score, np.std(scores))
 
 
 def process_warp(fn, /, *args, **kwargs):
@@ -100,29 +96,7 @@ def process_warp(fn, /, *args, **kwargs):
         f = executor.submit(fn, *args, **kwargs)
         return f.result()
 
-
-
 if __name__ == "__main__":
-    MODELS = [
-        "BAAI/bge-m3",
-        "Snowflake/snowflake-arctic-embed-xs",
-        "Snowflake/snowflake-arctic-embed-s",
-        "Snowflake/snowflake-arctic-embed-m",
-        "Snowflake/snowflake-arctic-embed-l",
-        "Snowflake/snowflake-arctic-embed-m-v1.5",
-        "Snowflake/snowflake-arctic-embed-l-v2.0",
-        "Snowflake/snowflake-arctic-embed-m-v2.0",
-        "BAAI/bge-base-en-v1.5",
-        "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
-
-        "intfloat/multilingual-e5-large-instruct"
-        "intfloat/multilingual-e5-small",
-        "jinaai/jina-embeddings-v3",
-        "Snowflake/snowflake-arctic-embed-m-long",
-    ]
-
-    for model_name in MODELS:
-        try:
-            process_warp(run, model_name)
-        except Exception as e:
-            print(model_name, e)
+    import sys
+    model_name = sys.argv[1]
+    run(model_name)
