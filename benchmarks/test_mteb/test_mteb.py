@@ -8,6 +8,7 @@ import mteb
 import numpy as np
 import torch
 from mteb.encoder_interface import PromptType
+from vllm.transformers_utils.utils import maybe_model_redirect
 
 os.environ["VLLM_LOGGING_LEVEL"] = "WARNING"
 
@@ -59,7 +60,7 @@ def run_and_get_main_score(encoder):
 
 def get_st_main_score(model_name):
     from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer(model_name, trust_remote_code=True)
+    model = SentenceTransformer(maybe_model_redirect(model_name), trust_remote_code=True)
 
     if model_name == "jinaai/jina-embeddings-v3":
         model.encode = partial(model.encode, task="text-matching")
