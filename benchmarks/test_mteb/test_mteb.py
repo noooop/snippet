@@ -7,11 +7,9 @@ from functools import partial
 import mteb
 import numpy as np
 import torch
-from mteb.encoder_interface import PromptType
 from vllm.transformers_utils.utils import maybe_model_redirect
 
 os.environ["VLLM_LOGGING_LEVEL"] = "WARNING"
-
 
 TASKS = ["STS12"]
 rng = np.random.default_rng(seed=42)
@@ -32,20 +30,14 @@ class VllmEncoder(mteb.Encoder):
                          trust_remote_code=trust_remote_code,
                          **kwargs)
 
-    def encode(
-        self,
-        sentences: Sequence[str],
-        *,
-        task_name: str,
-        prompt_type: PromptType | None = None,
-    ) -> np.ndarray:
+    def encode(self, sentences: Sequence[str], **kwargs) -> np.ndarray:
+        kwargs.pop("task_name", None)
         r = rng.permutation(len(sentences))
         sentences = [sentences[i] for i in r]
         outputs = self.model.embed(sentences, use_tqdm=False)
         embeds = np.array([o.outputs.embedding for o in outputs])
         embeds = embeds[np.argsort(r)]
         return embeds
-
 
 
 def run_and_get_main_score(encoder):
@@ -57,10 +49,18 @@ def run_and_get_main_score(encoder):
     return main_score
 
 
-
 def get_st_main_score(model_name):
     from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer(maybe_model_redirect(model_name), trust_remote_code=True)
+    model = SentenceTransformer(maybe_model_redirect(model_name),
+                                trust_remote_code=True)
+
+    model_encode = model.encode
+
+    def encode(sentences, **kwargs):
+        kwargs.pop("prompt_name", None)
+        return model_encode(sentences, **kwargs)
+
+    model.encode = encode
 
     if model_name == "jinaai/jina-embeddings-v3":
         model.encode = partial(model.encode, task="text-matching")
@@ -86,16 +86,9 @@ def run(model_name, times=10):
             main_score = run_and_get_main_score(encoder)
             scores.append(main_score)
 
-        print(dtype, model_name, st_main_score, np.mean(scores) - st_main_score, np.std(scores))
+        print(dtype, model_name, st_main_score,
+              np.mean(scores) - st_main_score, np.std(scores))
 
-
-def process_warp(fn, /, *args, **kwargs):
-    import multiprocessing as mp
-    from concurrent.futures import ProcessPoolExecutor
-
-    with ProcessPoolExecutor(1, mp.get_context("spawn")) as executor:
-        f = executor.submit(fn, *args, **kwargs)
-        return f.result()
 
 if __name__ == "__main__":
     import sys
