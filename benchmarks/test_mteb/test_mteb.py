@@ -7,9 +7,10 @@ from functools import partial
 import mteb
 import numpy as np
 import torch
-from vllm.transformers_utils.utils import maybe_model_redirect
 
-os.environ["VLLM_LOGGING_LEVEL"] = "WARNING"
+os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
+
+from vllm.transformers_utils.utils import maybe_model_redirect
 
 TASKS = ["STS12"]
 rng = np.random.default_rng(seed=42)
@@ -21,8 +22,8 @@ class VllmEncoder(mteb.Encoder):
         super().__init__()
         from vllm import LLM
 
-        if model == "Alibaba-NLP/gte-Qwen2-1.5B-instruct":
-            kwargs["hf_overrides"] = {"is_causal": True}
+        #if model == "Alibaba-NLP/gte-Qwen2-1.5B-instruct":
+        #    kwargs["hf_overrides"] = {"is_causal": True}
 
         self.model = LLM(model=model,
                          task="embed",
@@ -53,6 +54,7 @@ def get_st_main_score(model_name):
     from sentence_transformers import SentenceTransformer
     model = SentenceTransformer(maybe_model_redirect(model_name),
                                 trust_remote_code=True)
+    model_dtype = next(model.parameters()).dtype
 
     model_encode = model.encode
 
@@ -71,12 +73,12 @@ def get_st_main_score(model_name):
     gc.collect()
     torch.cuda.empty_cache()
 
-    return main_score
+    return main_score, model_dtype
 
 
 def run(model_name, times=10):
-    st_main_score = get_st_main_score(model_name)
-    print(model_name, st_main_score)
+    st_main_score, model_dtype = get_st_main_score(model_name)
+    print(model_name, model_dtype, st_main_score)
 
     for dtype in ["float16", "bfloat16", "float32"]:
         encoder = VllmEncoder(model_name, dtype=dtype)
