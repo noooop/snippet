@@ -40,3 +40,8 @@ fp32:
 | jinaai/jina-embeddings-v3 | 0.8243646209061513 | -3.119267999662778e-05 | 6.651161140301139e-06 |
 
 
+# usage
+
+```commandline
+python benchmarks/test_mteb/test_mteb.py  model_name
+```
