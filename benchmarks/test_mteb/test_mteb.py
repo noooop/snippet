@@ -91,6 +91,20 @@ def run(model_name, times=10):
         print(dtype, model_name, st_main_score,
               np.mean(scores) - st_main_score, np.std(scores))
 
+    try:
+        for attn_dtype in ["float16", "bfloat16"]:
+            encoder = VllmEncoder(model_name, dtype="float32", attn_dtype=attn_dtype)
+
+            scores = []
+            for i in range(times):
+                main_score = run_and_get_main_score(encoder)
+                scores.append(main_score)
+
+            print("attn_dtype:", attn_dtype, model_name, st_main_score,
+                  np.mean(scores) - st_main_score, np.std(scores))
+    except TypeError:
+        pass
+
 
 if __name__ == "__main__":
     import sys
