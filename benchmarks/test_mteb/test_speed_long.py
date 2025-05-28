@@ -19,11 +19,29 @@ class VllmMtebEncoder(mteb.Encoder):
                  truncate_prompt_tokens=-1,
                  **kwargs):
         super().__init__()
+
+        rope_theta = 1000
+        factor = 4.0
+        original_max_position_embeddings = 2048
+
+        # Use yarn to extend context
+        hf_overrides = {
+            "rope_theta": rope_theta,
+            "rope_scaling": {
+                "rope_type": "yarn",
+                "factor": factor,
+                "original_max_position_embeddings": original_max_position_embeddings
+            },
+            "max_model_len": int(original_max_position_embeddings * factor)
+        }
+
         self.model = LLM(model=model_name_or_path,
                          dtype=dtype,
                          trust_remote_code=trust_remote_code,
                          max_num_seqs=batchsize,
+                         hf_overrides=hf_overrides,
                          **kwargs)
+        print("max_model_len", self.model.llm_engine.model_config.max_model_len)
         self.truncate_prompt_tokens = truncate_prompt_tokens
 
     def encode(
