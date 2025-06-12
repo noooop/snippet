@@ -2,6 +2,7 @@
 import gc
 import os
 import shutil
+from pathlib import Path
 from typing import Optional
 
 import mteb
@@ -49,25 +50,38 @@ class VllmEncoder(mteb.Encoder):
         return scores
 
 
-def run_mteb_rerank(cross_encoder, tasks, languages):
-    results_folder = "tmp_mteb_results"
-    shutil.rmtree(results_folder, ignore_errors=True)
+def _run_mteb_rerank_stage1(evaluation, eval_splits, results_folder_retriever):
+    retriever = mteb.get_model("bm25s")
 
-    bm25s = mteb.get_model("bm25s")
-    tasks = mteb.get_tasks(tasks=tasks, languages=languages)
-
-    subset = "default"
-    eval_splits = ["test"]
-
-    evaluation = mteb.MTEB(tasks=tasks)
-    evaluation.run(
-        bm25s,
+    results = evaluation.run(
+        retriever,
         verbosity=0,
         eval_splits=eval_splits,
         save_predictions=True,
-        output_folder=f"{results_folder}/stage1",
+        output_folder=str(results_folder_retriever),
         encode_kwargs={"show_progress_bar": False},
     )
+
+    main_score = results[0].scores["test"][0]["main_score"]
+    print("mteb_rerank_stage1", main_score)
+
+
+def run_mteb_rerank(cross_encoder, tasks, languages):
+    results_folder = "tmp_mteb_results"
+    subset = "default"
+    eval_splits = ["test"]
+
+    results_folder_retriever = Path(__file__).parent
+    previous_results = results_folder_retriever / f"{tasks[0]}_{subset}_predictions.json"
+
+    shutil.rmtree(results_folder, ignore_errors=True)
+
+    tasks = mteb.get_tasks(tasks=tasks, languages=languages)
+    evaluation = mteb.MTEB(tasks=tasks)
+
+    if not (results_folder_retriever / previous_results).exists():
+        _run_mteb_rerank_stage1(evaluation, eval_splits,
+                                results_folder_retriever)
 
     results = evaluation.run(
         cross_encoder,
@@ -76,8 +90,7 @@ def run_mteb_rerank(cross_encoder, tasks, languages):
         top_k=10,
         save_predictions=True,
         output_folder=f"{results_folder}/stage2",
-        previous_results=
-        f"{results_folder}/stage1/NFCorpus_{subset}_predictions.json",
+        previous_results=str(previous_results),
         encode_kwargs={"show_progress_bar": False},
     )
 
@@ -86,11 +99,13 @@ def run_mteb_rerank(cross_encoder, tasks, languages):
     return main_score
 
 
+@torch.no_grad()
 def get_st_main_score(model_name):
     from sentence_transformers import CrossEncoder
     model = CrossEncoder(maybe_model_redirect(model_name),
+                         model_kwargs={"torch_dtype": torch.float32},
                          trust_remote_code=True)
-    model_dtype = next(model.parameters()).dtype
+    model_dtype = next(model.model.parameters()).dtype
 
     model_predict = model.predict
 
@@ -101,10 +116,10 @@ def get_st_main_score(model_name):
         **kwargs,
     ):
         # vllm and st both remove the prompt, fair comparison.
-        sentences = [(s[0], s[1]) for s in sentences]
-        return model_predict(sentences, *args, **kwargs)
+        prompts = [(s[0], s[1]) for s in sentences]
+        return model_predict(prompts, *args, **kwargs, batch_size=8)
 
-    model.encode = _predict
+    model.predict = _predict
 
     st_main_score = run_mteb_rerank(model,
                                     tasks=MTEB_RERANK_TASKS,
@@ -127,7 +142,8 @@ def run(model_name):
                                      tasks=MTEB_RERANK_TASKS,
                                      languages=MTEB_RERANK_LANGS)
 
-        print(dtype, model_name, st_main_score, main_score - st_main_score)
+        print(dtype, model_name, st_main_score, main_score,
+              main_score - st_main_score)
 
 
 if __name__ == "__main__":
