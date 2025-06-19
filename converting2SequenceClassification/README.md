@@ -14,3 +14,19 @@ testing:
 ```commandline
 pytest -s -vvv test_qwen3_reranker.py
 ```
+
+
+
+## BAAI/bge-reranker-v2-gemma
+
+converting:
+
+```commandline
+python converting.py --model_name BAAI/bge-reranker-v2-gemma --classifier_from_tokens '["Yes"]' --method no_post_processing --path ./bge-reranker-v2-gemma-seq-cls
+```
+
+testing:
+
+```commandline
+pytest -s -vvv test_bge-reranker-v2-gemma.py
+```

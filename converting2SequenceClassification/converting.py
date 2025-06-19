@@ -47,7 +47,12 @@ method_map = {
 }
 
 
-def converting(model_name, classifier_from_tokens, path, method, device="cpu"):
+def converting(model_name,
+               classifier_from_tokens,
+               path,
+               method,
+               use_pad_token=False,
+               device="cpu"):
     assert method in method_map
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
@@ -64,6 +69,7 @@ def converting(model_name, classifier_from_tokens, path, method, device="cpu"):
                        classifier_from_tokens, device)
 
     seq_cls_model.config.pad_token_id = tokenizer.pad_token_id
+    seq_cls_model.config.use_pad_token = use_pad_token
 
     seq_cls_model.save_pretrained(path)
     tokenizer.save_pretrained(path)
@@ -83,6 +89,9 @@ def parse_args():
         default='["no", "yes"]',
         help="classifier from tokens",
     )
+    parser.add_argument("--use-pad-token",
+                        action="store_true",
+                        help="Whether to use pad_token")
     parser.add_argument("--method",
                         type=str,
                         default="from_2_way_softmax",
@@ -103,5 +112,6 @@ if __name__ == "__main__":
         model_name=args.model_name,
         classifier_from_tokens=json.loads(args.classifier_from_tokens),
         method=args.method,
+        use_pad_token=args.use_pad_token,
         path=args.path,
     )

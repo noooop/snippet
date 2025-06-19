@@ -29,13 +29,16 @@ class VllmRunner:
                  **kwargs):
         super().__init__()
         from vllm import LLM
+
         self.model_name = model_name
 
-        self.model = LLM(model=model_name,
-                         task="score",
-                         dtype=dtype,
-                         trust_remote_code=trust_remote_code,
-                         **kwargs)
+        self.model = LLM(
+            model=model_name,
+            task="score",
+            dtype=dtype,
+            trust_remote_code=trust_remote_code,
+            **kwargs,
+        )
 
     def predict(
         self,
@@ -93,7 +96,6 @@ def mteb_test_rerank_models(hf_runner,
                             vllm_runner,
                             model_info: ModelInfo,
                             dtype="float16"):
-
     vllm_model = vllm_runner(model_info.converted_model_name, dtype=dtype)
     vllm_main_score = run_mteb_rerank(vllm_model,
                                       tasks=MTEB_RERANK_TASKS,

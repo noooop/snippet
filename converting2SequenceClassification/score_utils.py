@@ -9,7 +9,6 @@ def ping_pong_test_score_models(hf_runner,
                                 vllm_runner,
                                 model_info: ModelInfo,
                                 dtype="float32"):
-
     sentences = []
 
     vllm_model = vllm_runner(model_info.converted_model_name, dtype=dtype)
@@ -27,8 +26,10 @@ def ping_pong_test_score_models(hf_runner,
     hf_scores, hf_n_tokens = hf_model.predict(sentences, return_n_tokens=True)
 
     for i in range(len(sentences)):
-        assert float(vllm_scores[i]) == pytest.approx(float(hf_scores[i]), rel=0.01), \
-            f"Test failed at #{i}, vllm: {vllm_scores[i]}, st: {hf_scores[i]}"
+        assert float(vllm_scores[i]) == pytest.approx(
+            float(hf_scores[i]), rel=0.01
+        ), (f"Test failed at #{i}, vllm: {vllm_scores[i]}, st: {hf_scores[i]}")
 
-        assert vllm_n_tokens[i] == hf_n_tokens[
-            i], f"Test failed at #{i}, vllm: {vllm_n_tokens[i]}, st: {hf_n_tokens[i]}"
+        assert vllm_n_tokens[i] == hf_n_tokens[i], (
+            f"Test failed at #{i}, vllm: {vllm_n_tokens[i]}, st: {hf_n_tokens[i]}"
+        )
