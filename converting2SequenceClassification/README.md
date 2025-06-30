@@ -30,3 +30,19 @@ testing:
 ```commandline
 pytest -s -vvv test_bge-reranker-v2-gemma.py
 ```
+
+
+## mxbai-rerank-v2
+
+converting:
+
+```commandline
+python convert_model_to_seq_cls.py --model_name mixedbread-ai/mxbai-rerank-base-v2 --classifier_from_tokens '["0", "1"]' --method from_2_way_softmax --path ./mxbai-rerank-base-v2-seq-cls
+python convert_model_to_seq_cls.py --model_name mixedbread-ai/mxbai-rerank-large-v2 --classifier_from_tokens '["0", "1"]' --method from_2_way_softmax --path ./mxbai-rerank-large-v2-seq-cls
+```
+
+testing:
+
+```commandline
+pytest -s -vvv test_mxbai_rerank_v2.py
+```

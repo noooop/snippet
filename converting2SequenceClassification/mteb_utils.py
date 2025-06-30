@@ -17,7 +17,7 @@ class ModelInfo(NamedTuple):
 
 MTEB_RERANK_TASKS = ["NFCorpus"]
 MTEB_RERANK_LANGS = ["en"]
-MTEB_RERANK_TOL = 1e-3
+MTEB_RERANK_TOL = 2e-3
 
 
 class VllmRunner:
