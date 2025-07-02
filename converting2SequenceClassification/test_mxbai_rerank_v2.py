@@ -20,6 +20,9 @@ RERANK_MODELS = [
     )
 ]
 
+# Template aware prompt truncation to avoid cutting off important instructions.
+MAX_LENGTH = 2000
+
 
 class MxbaiRerankV2HfRunner:
     sep = "\n"
@@ -50,8 +53,6 @@ class MxbaiRerankV2HfRunner:
 
         self.device = "cuda"
         self.model.to(self.device)
-        self.max_length = 40000
-        self.model_max_length = 80000
         self.prepare_predefined_inputs()
 
     def prepare_predefined_inputs(self):
@@ -89,16 +90,6 @@ class MxbaiRerankV2HfRunner:
                        documents: List[str],
                        *,
                        instruction: Optional[str] = None) -> dict:
-        """Prepare model inputs from query-document pairs.
-
-        Args:
-            queries: List of queries
-            documents: List of documents
-            instruction: Optional instruction
-
-        Returns:
-            dict: Tokenized and padded inputs
-        """
         inputs = []
         instruction_prompt = self.instruction_prompt.format(
             instruction=instruction) if instruction else None
@@ -109,31 +100,21 @@ class MxbaiRerankV2HfRunner:
                 query_prompt = "".join(
                     [instruction_prompt, self.sep, query_prompt])
 
-            # Tokenize query with length limit
             query_inputs = self.tokenizer(
                 query_prompt,
                 return_tensors=None,
                 add_special_tokens=False,
-                truncation=True,
             )
 
-            available_tokens = self.model_max_length - len(
-                query_inputs["input_ids"]) - self.predefined_length
-            doc_maxlen = min(available_tokens, self.max_length)
-
-            # Tokenize document
             document_inputs = self.tokenizer(
                 self.doc_prompt.format(document=document),
                 return_tensors=None,
                 add_special_tokens=False,
-                truncation=True,
             )
 
-            # Combine query and document
             item = self.tokenizer.prepare_for_model(
                 query_inputs["input_ids"],
                 self.sep_inputs + document_inputs["input_ids"],
-                truncation="only_second",
                 padding=False,
                 return_attention_mask=False,
                 return_token_type_ids=False,
@@ -162,7 +143,8 @@ class MxbaiRerankV2HfRunner:
         scores = []
         n_tokens = []
         for query, doc, *_ in sentences:
-            inputs = self.prepare_inputs(queries=[query], documents=[doc])
+            inputs = self.prepare_inputs(queries=[query],
+                                         documents=[doc[:MAX_LENGTH]])
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
             _n_tokens = len(inputs["input_ids"][0])
 
@@ -210,7 +192,7 @@ class MxbaiRerankV2VllmRunner(VllmRunner):
         ]
         corpus = [
             self.document_template.format(
-                doc=s[1],
+                doc=s[1][:MAX_LENGTH],
                 suffix=self.suffix,
                 instruction=self.instruction,
             ) for s in sentences
@@ -220,8 +202,7 @@ class MxbaiRerankV2VllmRunner(VllmRunner):
 
 @pytest.mark.parametrize("model_info", RERANK_MODELS)
 def test_rerank_models_mteb(model_info: ModelInfo) -> None:
-    mteb_test_rerank_models(MxbaiRerankV2HfRunner,
-                            MxbaiRerankV2VllmRunner,
+    mteb_test_rerank_models(MxbaiRerankV2HfRunner, MxbaiRerankV2VllmRunner,
                             model_info)
 
 
