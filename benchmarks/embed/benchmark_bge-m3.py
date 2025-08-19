@@ -32,7 +32,7 @@ if __name__ == '__main__':
     args.trust_remote_code = False
     args.tokenizer = args.model
     args.max_model_len = None
-    batchsize = 1
+    batchsize = 64
     args.num_prompts = batchsize * 4
     args.batchsize = [batchsize]
     args.input_len = [32]
@@ -40,5 +40,5 @@ if __name__ == '__main__':
     args.enforce_eager =True
     benchmark_vllm(args)
 
-    args.enforce_eager = False
-    benchmark_vllm(args)
+    #args.enforce_eager = False
+    #benchmark_vllm(args)
