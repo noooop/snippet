@@ -19,6 +19,7 @@ def benchmark_vllm(args):
               enforce_eager=args.enforce_eager,
               dtype=args.dtype,
               trust_remote_code=True,
+              enable_prefix_caching=False,
               tensor_parallel_size=args.tensor_parallel_size,
               **vllm_extra_kwargs)
 
