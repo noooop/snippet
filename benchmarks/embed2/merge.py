@@ -145,7 +145,7 @@ def _maybe_cast_int(x):
 
 
 def _get_tp_rank_of_path(p: Path):
-    return int(re.search("rank-(\d+)", p.name).group(1))
+    return int(re.search(r"rank-(\d+)", p.name).group(1))
 
 
 if __name__ == '__main__':

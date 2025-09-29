@@ -1,6 +1,7 @@
 import traceback
 
 from benchmarks.embed2.profile import main
+from benchmarks.embed2.merge import main as merger
 
 for model_name in [
         "jinaai/jina-embeddings-v3",
@@ -25,6 +26,12 @@ for model_name in [
         "Snowflake/snowflake-arctic-embed-m-v1.5",
 ]:
     try:
-        main(model_name)
+        main(model_name, dtype="float16", tp=1)
+    except Exception:
+        traceback.print_exc()
+
+    try:
+        profiles_dir = main(model_name, dtype="float16", tp=2)
+        merger(dir_data=profiles_dir)
     except Exception:
         traceback.print_exc()

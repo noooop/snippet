@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 
 from easydict import EasyDict as edict
@@ -13,46 +14,53 @@ def benchmark_vllm(args):
         hf_overrides = {"architectures": ["GteNewModel"]}
         vllm_extra_kwargs["hf_overrides"] = hf_overrides
 
-    for batchsize in args.batchsize:
-        llm = LLM(model=args.model,
-                  max_num_seqs=batchsize,
-                  enforce_eager=args.enforce_eager,
-                  trust_remote_code=True,
-                  **vllm_extra_kwargs)
+    llm = LLM(model=args.model,
+              max_num_seqs=args.batchsize,
+              enforce_eager=args.enforce_eager,
+              dtype=args.dtype,
+              trust_remote_code=True,
+              tensor_parallel_size=args.tensor_parallel_size,
+              **vllm_extra_kwargs)
 
-        for input_len in args.input_len:
-            prompt = TokensPrompt(prompt_token_ids=[1024] * input_len)
-            prompts = [prompt for _ in range(args.num_prompts)]
+    prompt = TokensPrompt(prompt_token_ids=[1024] * args.input_len)
+    prompts = [prompt for _ in range(args.batchsize * args.n_batch)]
 
-            for i in range(10):
-                llm.embed(prompts, use_tqdm=False)
+    for i in range(2):
+        llm.embed(prompts, use_tqdm=False)
 
-            llm.start_profile()
-            outputs = llm.embed(prompts, use_tqdm=False)
-            for prompt, output in zip(prompts, outputs):
-                pass
-            llm.stop_profile()
+    llm.start_profile()
+    outputs = llm.embed(prompts, use_tqdm=False)
+    for prompt, output in zip(prompts, outputs):
+        pass
+    llm.stop_profile()
+
+    time.sleep(10)
 
     del llm
     cleanup_dist_env_and_memory()
 
 
-def main(model_name: str):
-    profiles_dir = Path("/share/profiles") / model_name.replace("/", "_")
-    profiles_dir.mkdir(exist_ok=True)
+def main(model_name: str, dtype: str = "auto", tp: int = 1):
+    profiles_dir = Path(
+        "/share/profiles") / f"{dtype}_tp_{tp}" / model_name.replace("/", "_")
+    profiles_dir.mkdir(exist_ok=True, parents=True)
     os.environ["VLLM_TORCH_PROFILER_DIR"] = str(profiles_dir)
 
     args = edict()
     args.model = model_name
     args.tokenizer = args.model
     args.max_model_len = None
-    batchsize = 64
-    args.num_prompts = batchsize * 4
-    args.batchsize = [batchsize]
-    args.input_len = [32]
 
+    args.n_batch = 4
+    args.batchsize = 32
+    args.input_len = 128
+    args.dtype = dtype
     args.enforce_eager = True
+    args.tensor_parallel_size = tp
+
     benchmark_vllm(args)
+
+    return profiles_dir
 
 
 if __name__ == '__main__':
