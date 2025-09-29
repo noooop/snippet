@@ -1,24 +1,22 @@
-
 import os
-
-
 
 os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
 import time
-from typing import Union, Callable
+from typing import Callable, Union
 
 
 def benchmark_vllm(args):
     from tqdm import tqdm
-    from vllm import LLM as BaseLLM, RequestOutput, PoolingRequestOutput
+    from vllm import LLM as BaseLLM
+    from vllm import PoolingRequestOutput, RequestOutput, TokensPrompt
     from vllm.distributed import cleanup_dist_env_and_memory
-    from vllm import TokensPrompt
 
     class LLM(BaseLLM):
+
         def _run_engine(
-                self,
-                *,
-                use_tqdm: Union[bool, Callable[..., tqdm]] = False
+            self,
+            *,
+            use_tqdm: Union[bool, Callable[..., tqdm]] = False
         ) -> list[Union[RequestOutput, PoolingRequestOutput]]:
             # Initialize tqdm.
             if use_tqdm:
@@ -48,10 +46,13 @@ def benchmark_vllm(args):
                                 # Calculate tokens only for RequestOutput
                                 n = len(output.outputs)
                                 assert output.prompt_token_ids is not None
-                                total_in_toks += len(output.prompt_token_ids) * n
-                                in_spd = total_in_toks / pbar.format_dict["elapsed"]
+                                total_in_toks += len(
+                                    output.prompt_token_ids) * n
+                                in_spd = total_in_toks / pbar.format_dict[
+                                    "elapsed"]
                                 total_out_toks += sum(
-                                    len(stp.token_ids) for stp in output.outputs)
+                                    len(stp.token_ids)
+                                    for stp in output.outputs)
                                 out_spd = (total_out_toks /
                                            pbar.format_dict["elapsed"])
                                 pbar.postfix = (
@@ -71,15 +72,16 @@ def benchmark_vllm(args):
             return sorted(outputs, key=lambda x: int(x.request_id))
 
     for batchsize in args.batchsize:
-        llm = LLM(model=args.model,
-                  max_model_len=args.max_model_len,
-                  max_num_seqs=batchsize,
-                  max_num_batched_tokens= batchsize * args.max_model_len,
-                  enforce_eager=args.enforce_eager, )
+        llm = LLM(
+            model=args.model,
+            max_model_len=args.max_model_len,
+            max_num_seqs=batchsize,
+            max_num_batched_tokens=batchsize * args.max_model_len,
+            enforce_eager=args.enforce_eager,
+        )
 
         for input_len in args.input_len:
-            #prompt = "if" * (input_len-2)
-            prompt = TokensPrompt(prompt_token_ids=[0] + [1029] * (input_len - 2) + [2])
+            prompt = TokensPrompt(prompt_token_ids=[1024] * input_len)
             prompts = [prompt for _ in range(args.num_prompts)]
 
             start = time.perf_counter()
@@ -100,19 +102,19 @@ def benchmark_vllm(args):
         del llm
         cleanup_dist_env_and_memory()
 
-if __name__ == '__main__':
+
+def main(model_name: str = 'BAAI/bge-m3'):
     from easydict import EasyDict as edict
     args = edict()
 
-    args.model = 'BAAI/bge-m3'
+    args.model = model_name
 
     args.trust_remote_code = False
     args.tokenizer = args.model
-    args.max_model_len = 1000
+    args.max_model_len = 512
     args.num_prompts = 10000
     args.batchsize = [1, 2, 4, 8, 16, 32, 64]
-    args.input_len = [32, 64, 128, 256, 512]
-
+    args.input_len = [32, 64, 128, 256]
 
     from concurrent.futures import ProcessPoolExecutor
 
@@ -126,3 +128,9 @@ if __name__ == '__main__':
 
     args.enforce_eager = False
     run(args)
+
+
+if __name__ == '__main__':
+    import sys
+    model_name = sys.argv[1]
+    main(model_name)

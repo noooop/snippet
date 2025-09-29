@@ -1,5 +1,5 @@
-
 import time
+
 
 def benchmark_hf(args):
     import torch
@@ -7,7 +7,7 @@ def benchmark_hf(args):
 
     model = SentenceTransformer(
         args.model,
-        model_kwargs={"torch_dtype":"float16"},
+        model_kwargs={"torch_dtype": "float16"},
         trust_remote_code=True,
     )
 
@@ -35,10 +35,11 @@ def benchmark_hf(args):
                 elapsed_time = end - start
                 delay = elapsed_time / n_step
 
-                print(f"Batchsize {batchsize}, Throughput: "
-                      f"{len(requests) / elapsed_time:.4f} requests/s, "
-                      f"{len(requests*input_len) / elapsed_time:.4f} tokens/s, "
-                      f"Latency {delay * 1000:0.2f} ms, n_step {n_step}")
+                print(
+                    f"Batchsize {batchsize}, Throughput: "
+                    f"{len(requests) / elapsed_time:.4f} requests/s, "
+                    f"{len(requests*input_len) / elapsed_time:.4f} tokens/s, "
+                    f"Latency {delay * 1000:0.2f} ms, n_step {n_step}")
 
 
 if __name__ == '__main__':
@@ -53,7 +54,6 @@ if __name__ == '__main__':
     args.num_prompts = 10000
     args.batchsize = [1, 2, 4, 8, 16, 32, 64]
     args.input_len = [32, 64, 128, 256, 512]
-
 
     from concurrent.futures import ProcessPoolExecutor
 

@@ -1,5 +1,3 @@
-
-
 def benchmark_vllm(args):
     from vllm import LLM
 
@@ -10,7 +8,7 @@ def benchmark_vllm(args):
                   enforce_eager=args.enforce_eager)
 
         for input_len in args.input_len:
-            prompt = "if" * (input_len-2)
+            prompt = "if" * (input_len - 2)
             prompts = [prompt for _ in range(args.num_prompts)]
 
             for i in range(10):
@@ -37,7 +35,7 @@ if __name__ == '__main__':
     args.batchsize = [batchsize]
     args.input_len = [32]
 
-    args.enforce_eager =True
+    args.enforce_eager = True
     benchmark_vllm(args)
 
     #args.enforce_eager = False
