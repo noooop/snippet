@@ -25,7 +25,7 @@ class VllmEncoder(mteb.Encoder):
 
         self.model = LLM(
             model=model_name,
-            task="embed",
+            runner="pooling",
             dtype="float32",
             trust_remote_code=True,
             enforce_eager=True,
