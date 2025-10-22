@@ -1,9 +1,10 @@
 import time
+import torch
+from sentence_transformers import SentenceTransformer
 
-
-def benchmark_hf(args):
+@torch.inference_mode
+def benchmark(args):
     import torch
-    from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer(
         args.model,
@@ -11,35 +12,34 @@ def benchmark_hf(args):
         trust_remote_code=True,
     )
 
-    with torch.no_grad():
-        for batchsize in args.batchsize:
-            for input_len in args.input_len:
-                prompt = "你" * (input_len - 2)
-                requests = [prompt for _ in range(args.num_prompts)]
+    for batchsize in args.batchsize:
+        for input_len in args.input_len:
+            prompt = "你" * (input_len - 2)
+            requests = [prompt for _ in range(args.num_prompts)]
 
-                inputs_batch = model.tokenizer(prompt)
-                assert len(inputs_batch["input_ids"]) == input_len
+            inputs_batch = model.tokenizer(prompt)
+            assert len(inputs_batch["input_ids"]) == input_len
 
-                start = time.perf_counter()
+            start = time.perf_counter()
 
-                n_step = 0
-                for i in range(0, len(requests), batchsize):
-                    batch = requests[i : i + batchsize]
-                    model.encode(batch, batch_size=batchsize)
-                    n_step += 1
+            n_step = 0
+            for i in range(0, len(requests), batchsize):
+                batch = requests[i : i + batchsize]
+                model.encode(batch, batch_size=batchsize)
+                n_step += 1
 
-                torch.cuda.synchronize()
-                end = time.perf_counter()
+            torch.cuda.synchronize()
+            end = time.perf_counter()
 
-                elapsed_time = end - start
-                delay = elapsed_time / n_step
+            elapsed_time = end - start
+            delay = elapsed_time / n_step
 
-                print(
-                    f"Batchsize {batchsize}, Throughput: "
-                    f"{len(requests) / elapsed_time:.4f} requests/s, "
-                    f"{len(requests * input_len) / elapsed_time:.4f} tokens/s, "
-                    f"Latency {delay * 1000:0.2f} ms, n_step {n_step}"
-                )
+            print(
+                f"Batchsize {batchsize}, Throughput: "
+                f"{len(requests) / elapsed_time:.4f} requests/s, "
+                f"{len(requests * input_len) / elapsed_time:.4f} tokens/s, "
+                f"Latency {delay * 1000:0.2f} ms, n_step {n_step}"
+            )
 
 
 if __name__ == "__main__":
@@ -60,7 +60,7 @@ if __name__ == "__main__":
 
     def run(args):
         with ProcessPoolExecutor(1) as executor:
-            f = executor.submit(benchmark_hf, args)
+            f = executor.submit(benchmark, args)
             f.result()
 
     run(args)
