@@ -100,9 +100,9 @@ def benchmark(args):
 
 
 def run(args):
-    for api_server_count in args.api_server_count_list:
+    for batchsize in args.batchsizes:
         try:
-            args.api_server_count = api_server_count
+            args.batchsize = batchsize
             proc = run_server(args)
             wait()
 
@@ -122,11 +122,10 @@ if __name__ == "__main__":
     args.tokenizer = args.model
     args.max_model_len = 512
     args.num_prompts = 10000
-    args.batchsize = 64
+    args.batchsize = [1, 2, 4, 8, 16, 32, 64, 128]
     args.input_len = [32, 64, 128, 256, 512]
     args.n_clients_list = [1, 2, 4, 8, 16, 32]
-    args.api_server_count_list = [1, 2, 4, 8]
-
+    args.api_server_count = 1
     args.enforce_eager = False
 
     run(args)
