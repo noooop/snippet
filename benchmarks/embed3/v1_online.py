@@ -122,7 +122,7 @@ if __name__ == "__main__":
     args.tokenizer = args.model
     args.max_model_len = 512
     args.num_prompts = 10000
-    args.batchsize = [1, 2, 4, 8, 16, 32, 64, 128]
+    args.batchsizes = [1, 2, 4, 8, 16, 32, 64, 128]
     args.input_len = [32, 64, 128, 256, 512]
     args.n_clients_list = [1, 2, 4, 8, 16, 32]
     args.api_server_count = 1
