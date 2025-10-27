@@ -1,12 +1,10 @@
-import os
 
-os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
+# os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
 
 import subprocess
 import time
 
 import requests
-import numpy as np
 from concurrent.futures import ProcessPoolExecutor
 
 
@@ -50,45 +48,33 @@ def wait():
 
 
 def _benchmark(args):
-    from gevent.pool import Pool
     from gevent import monkey
 
     monkey.patch_socket()
 
-    for input_len in args.input_len:
-        prompt = "你" * (input_len - 2)
-        prompts = [prompt for _ in range(args.num_prompts)]
+    prompt = "你" * (args.input_len[0] - 2)
 
-        def worker(prompt):
-            api_url = "http://localhost:8000/v1/embeddings"
-            prompt = {
-                "model": args.model,
-                "input": prompt,
-            }
-            start = time.perf_counter()
-            response = requests.post(api_url, json=prompt)
-            assert response.status_code == 200
-            len(response.content)
-            end = time.perf_counter()
-            e2e = end - start
-            return e2e
+    def worker(prompt):
+        api_url = "http://localhost:8000/v1/embeddings"
+        prompt = {
+            "model": args.model,
+            "input": prompt,
+            "encoding_format": "bytes",
+            "embed_dtype": "fp8_e4m3",
+        }
+        start = time.perf_counter()
+        # print("start: ", start)
+        response = requests.post(api_url, json=prompt)
+        assert response.status_code == 200
+        len(response.content)
+        end = time.perf_counter()
+        # print("end: ", end)
+        e2e = end - start
+        print(e2e * 1000)
 
-        for n_clients in args.n_clients_list:
-            metrics_list = []
-            p = Pool(n_clients)
-            start = time.perf_counter()
-            for metrics in p.imap_unordered(worker, prompts):
-                metrics_list.append(metrics)
-            end = time.perf_counter()
-            elapsed_time = end - start
-            e2e = np.mean(metrics_list)
-
-            print(
-                f"n_clients {n_clients}, Batchsize {args.batchsize}, Throughput: "
-                f"{len(prompts) / elapsed_time:.4f} requests/s, "
-                f"{len(prompts * input_len) / elapsed_time:.4f} tokens/s, "
-                f"Latency {e2e * 1000:0.2f} ms"
-            )
+    for i in range(10):
+        print("=" * 80)
+        worker(prompt)
 
 
 def benchmark(args):
@@ -120,9 +106,9 @@ if __name__ == "__main__":
     args.tokenizer = args.model
     args.max_model_len = 512
     args.num_prompts = 10000
-    args.batchsizes = [1, 2, 4, 8, 16, 32, 64]
-    args.input_len = [32, 64, 128, 256, 512]
-    args.n_clients_list = [1, 2, 4, 8, 16, 32]
+    args.batchsizes = [1]
+    args.input_len = [32]
+    args.n_clients_list = [1]
 
     args.enforce_eager = False
 
