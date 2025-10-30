@@ -27,11 +27,11 @@ def run_server(args):
     if args.enforce_eager:
         serve_cmd.append("--enforce_eager")
 
-    proc = subprocess.Popen(
-        serve_cmd,
-    )
+    process = subprocess.Popen(serve_cmd,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
 
-    return proc
+    return process
 
 
 def wait():
@@ -109,6 +109,13 @@ def run(args):
             benchmark(args)
         finally:
             proc.terminate()
+            out, err = proc.communicate()
+            print("=" * 80)
+            print("out")
+            print(out)
+            print("err")
+            print(err)
+            print("=" * 80)
 
 
 if __name__ == "__main__":

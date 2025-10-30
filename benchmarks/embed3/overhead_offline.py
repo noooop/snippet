@@ -3,10 +3,7 @@
 
 import time
 
-from concurrent.futures import ProcessPoolExecutor
-
-
-def _benchmark(args):
+def benchmark(args):
     from vllm import LLM
     from vllm.distributed import cleanup_dist_env_and_memory
 
@@ -34,12 +31,6 @@ def _benchmark(args):
         worker(prompt)
 
     cleanup_dist_env_and_memory()
-
-
-def benchmark(args):
-    with ProcessPoolExecutor(1) as executor:
-        f = executor.submit(_benchmark, args)
-        f.result()
 
 
 def run(args):

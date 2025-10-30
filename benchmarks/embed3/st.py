@@ -53,8 +53,8 @@ if __name__ == "__main__":
     args.tokenizer = args.model
     args.max_model_len = 512
     args.num_prompts = 10000
-    args.batchsize = [1, 2, 4, 8, 16, 32, 64]
-    args.input_len = [32, 64, 128, 256]
+    args.batchsize = [1, 2, 4, 8, 16, 32, 64, 128]
+    args.input_len = [32, 64, 128, 256, 512]
 
     from concurrent.futures import ProcessPoolExecutor
 
