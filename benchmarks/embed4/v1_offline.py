@@ -15,9 +15,10 @@ def benchmark_vllm(args):
             model=args.model,
             max_model_len=args.max_model_len,
             max_num_seqs=batchsize,
-            max_num_batched_tokens=batchsize * args.max_model_len,
+            max_num_batched_tokens=batchsize * args.max_model_len * 2,
             enforce_eager=args.enforce_eager,
         )
+        llm.n_step = 0
 
         llm_engine_step = llm.llm_engine.step
 
