@@ -27,9 +27,9 @@ def run_server(args):
     if args.enforce_eager:
         serve_cmd.append("--enforce_eager")
 
-    process = subprocess.Popen(serve_cmd,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
+    process = subprocess.Popen(
+        serve_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
 
     return process
 

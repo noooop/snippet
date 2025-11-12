@@ -1,7 +1,7 @@
-
 # os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
 
 import time
+
 
 def benchmark(args):
     from vllm import LLM
