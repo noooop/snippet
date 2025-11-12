@@ -1,14 +1,15 @@
 import os
 
+import torch
+
 os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
 import time
+from vllm import LLM
+from vllm.distributed import cleanup_dist_env_and_memory
+import gc
 
 
 def benchmark_vllm(args):
-    from vllm import LLM
-    from vllm import PoolingRequestOutput, RequestOutput
-    from vllm.distributed import cleanup_dist_env_and_memory
-
     for batchsize in args.batchsize:
         llm = LLM(
             model=args.model,
@@ -18,6 +19,14 @@ def benchmark_vllm(args):
             enforce_eager=args.enforce_eager,
         )
 
+        llm_engine_step = llm.llm_engine.step
+
+        def step():
+            llm.n_step += 1
+            return llm_engine_step()
+
+        llm.llm_engine.step = step
+
         for input_len in args.input_len:
             prompt = "你" * (input_len - 2)
             prompts = [prompt for _ in range(args.num_prompts)]
@@ -25,6 +34,7 @@ def benchmark_vllm(args):
             outputs = llm.embed(prompt, use_tqdm=False)
             assert len(outputs[0].prompt_token_ids) == input_len
 
+            llm.n_step = 0
             start = time.perf_counter()
             outputs = llm.embed(prompts, use_tqdm=False)
             for prompt, output in zip(prompts, outputs):
@@ -42,7 +52,9 @@ def benchmark_vllm(args):
                 f"Latency {delay * 1000:0.2f} ms, n_step {n_step}"
             )
 
-        del llm
+        del llm, llm_engine_step
+        gc.collect()
+        torch.cuda.empty_cache()
         cleanup_dist_env_and_memory()
 
 
