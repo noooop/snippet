@@ -29,13 +29,7 @@ def benchmark_vllm(args):
 
         llm.llm_engine.step = step
 
-        for input_len in args.input_len:
-            prompt = "你" * (input_len - 2)
-            prompts = [prompt for _ in range(args.num_prompts)]
-
-            outputs = llm.embed(prompts[:10], use_tqdm=False)
-            assert len(outputs[0].prompt_token_ids) == input_len
-
+        def run():
             llm.n_step = 0
             llm.request_counter = Counter()
             start = time.perf_counter()
@@ -54,6 +48,19 @@ def benchmark_vllm(args):
                 f"{len(prompts * input_len) / elapsed_time:.4f} tokens/s, "
                 f"Latency {delay * 1000:0.2f} ms, n_step {n_step}"
             )
+
+            time.sleep(2)
+
+        for input_len in args.input_len:
+            prompt = "你" * (input_len - 2)
+            prompts = [prompt for _ in range(args.num_prompts)]
+
+            outputs = llm.embed(prompts[:10], use_tqdm=False)
+            for prompt, output in zip(prompts, outputs):
+                pass
+            assert len(outputs[0].prompt_token_ids) == input_len
+
+            run()
 
         del llm, llm_engine_step
         gc.collect()
@@ -81,9 +88,6 @@ if __name__ == "__main__":
         with ProcessPoolExecutor(1) as executor:
             f = executor.submit(benchmark_vllm, args)
             f.result()
-
-    args.enforce_eager = True
-    run(args)
 
     args.enforce_eager = False
     run(args)
