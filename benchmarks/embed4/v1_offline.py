@@ -74,13 +74,12 @@ if __name__ == "__main__":
     args = edict()
 
     args.model = "BAAI/bge-base-en-v1.5"
-
     args.trust_remote_code = False
     args.tokenizer = args.model
     args.max_model_len = 512
     args.num_prompts = 10000
-    args.batchsize = [1, 2, 4, 8, 16, 32, 64, 128]
-    args.input_len = [32, 64, 128, 256, 512]
+    args.batchsize = [128, 64, 32, 16, 8, 4, 2, 1]
+    args.input_len = [512, 256, 128, 64, 32]
 
     from concurrent.futures import ProcessPoolExecutor
 
