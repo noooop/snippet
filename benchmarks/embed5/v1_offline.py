@@ -37,11 +37,12 @@ def benchmark_vllm(args):
                 max_num_batched_tokens=batchsize * args.max_model_len * 2,
             )
         )
+
         for input_len in args.input_len:
             prompt = "你" * (input_len - 2)
             prompts = [prompt for _ in range(args.num_prompts)]
 
-            outputs = llm.embed(prompt, use_tqdm=False)
+            outputs = llm.embed(prompts[:10], use_tqdm=False)
             assert len(outputs[0].prompt_token_ids) == input_len
 
             llm.n_step = 0

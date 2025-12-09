@@ -6,6 +6,7 @@ os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
 import time
 from vllm import LLM
 from vllm.distributed import cleanup_dist_env_and_memory
+from vllm.utils.counter import Counter
 import gc
 
 
@@ -32,10 +33,11 @@ def benchmark_vllm(args):
             prompt = "你" * (input_len - 2)
             prompts = [prompt for _ in range(args.num_prompts)]
 
-            outputs = llm.embed(prompt, use_tqdm=False)
+            outputs = llm.embed(prompts[:10], use_tqdm=False)
             assert len(outputs[0].prompt_token_ids) == input_len
 
             llm.n_step = 0
+            llm.request_counter = Counter()
             start = time.perf_counter()
             outputs = llm.embed(prompts, use_tqdm=False)
             for prompt, output in zip(prompts, outputs):
@@ -47,7 +49,7 @@ def benchmark_vllm(args):
             delay = elapsed_time / n_step
 
             print(
-                f"Batchsize {batchsize}, Throughput: "
+                f"Batchsize {batchsize}, Input_len {input_len} Throughput: "
                 f"{len(prompts) / elapsed_time:.4f} requests/s, "
                 f"{len(prompts * input_len) / elapsed_time:.4f} tokens/s, "
                 f"Latency {delay * 1000:0.2f} ms, n_step {n_step}"
