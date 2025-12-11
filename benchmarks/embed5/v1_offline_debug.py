@@ -1,8 +1,6 @@
-import os
-
 import torch
 
-os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
+# os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
 import time
 from vllm import LLM
 from vllm.distributed import cleanup_dist_env_and_memory
@@ -97,7 +95,7 @@ if __name__ == "__main__":
     args.max_model_len = 512
     args.num_prompts = 3
     args.batchsize = [128, 1]
-    args.input_len = [512, 32]
+    args.input_len = [32]
 
     from concurrent.futures import ProcessPoolExecutor
 
