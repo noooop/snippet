@@ -7,7 +7,6 @@ import time
 from vllm import LLM
 from vllm.distributed import cleanup_dist_env_and_memory
 from vllm.utils.counter import Counter
-from vllm.v1.engine import SchedulerReconfigure
 
 import gc
 
@@ -30,14 +29,20 @@ def benchmark_vllm(args):
 
     llm.llm_engine.step = step
 
-    def run():
+    def warmup(prompts):
+        time.sleep(2)
+        outputs = llm.embed(prompts[:10], use_tqdm=False)
+        assert len(outputs[0].prompt_token_ids) == input_len
+
+    def run(prompts):
+        time.sleep(2)
+
         llm.n_step = 0
         llm.request_counter = Counter()
         start = time.perf_counter()
         outputs = llm.embed(prompts, use_tqdm=False)
-        for prompt, output in zip(prompts, outputs):
-            pass
         end = time.perf_counter()
+        assert len(outputs[-1].prompt_token_ids) == input_len
 
         n_step = llm.n_step
         elapsed_time = end - start
@@ -50,28 +55,18 @@ def benchmark_vllm(args):
             f"Latency {delay * 1000:0.2f} ms, n_step {n_step}"
         )
 
-        time.sleep(2)
-
     for batchsize in args.batchsize:
-        llm.reconfigure_scheduler(
-            config=SchedulerReconfigure(
-                max_num_seqs=batchsize,
-                max_num_batched_tokens=batchsize * args.max_model_len * 2,
-            )
+        llm.reconfigure(
+            max_num_seqs=batchsize,
+            max_num_batched_tokens=batchsize * args.max_model_len * 2,
         )
-
-        time.sleep(2)
 
         for input_len in args.input_len:
             prompt = "你" * (input_len - 2)
             prompts = [prompt for _ in range(args.num_prompts)]
 
-            outputs = llm.embed(prompts[:10], use_tqdm=False)
-            for prompt, output in zip(prompts, outputs):
-                pass
-            assert len(outputs[0].prompt_token_ids) == input_len
-
-            run()
+            warmup(prompts)
+            run(prompts)
 
     del llm, llm_engine_step
     gc.collect()
