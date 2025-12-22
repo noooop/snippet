@@ -1,6 +1,9 @@
 import os
 
 os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
+# lmcache config
+os.environ["LMCACHE_LOCAL_CPU"] = "True"
+os.environ["LMCACHE_MAX_LOCAL_CPU_SIZE"] = "20.0"
 
 
 def get_requests(args):
@@ -27,6 +30,7 @@ def benchmark(args):
     import time
     from vllm import LLM, SamplingParams, TokensPrompt
     from vllm.distributed import cleanup_dist_env_and_memory
+    from vllm.config import KVTransferConfig
 
     sampling_params = SamplingParams(
         temperature=0.8,
@@ -35,11 +39,18 @@ def benchmark(args):
         max_tokens=1,
     )
 
+    lmcache_connector = "LMCacheConnectorV1"
+    ktc = KVTransferConfig(
+        kv_connector=lmcache_connector,
+        kv_role="kv_both",
+    )
+
     llm = LLM(
         model=args.model,
         max_model_len=args.max_model_len,
         gpu_memory_utilization=args.gpu_memory_utilization,
         enable_prefix_caching=args.enable_prefix_caching,
+        kv_transfer_config=ktc,
     )
 
     requests = get_requests(args)
