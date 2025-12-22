@@ -68,7 +68,7 @@ def benchmark(args):
 
         elapsed_time = end - start
         print(
-            f"Hit rate: {args.hit_rate}, Throughput: {len(requests) / elapsed_time:.4f} requests/s"
+            f"Hit rate: {args.hit_rate}, Throughput: {len(prompts) / elapsed_time:.4f} requests/s"
         )
 
     del llm
