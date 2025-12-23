@@ -1,6 +1,9 @@
 import random
 from typing import List, Union
-from vllm.tokenizers import get_tokenizer
+try:
+    from vllm.tokenizers import get_tokenizer
+except ModuleNotFoundError:
+    from vllm.transformers_utils.tokenizer import get_tokenizer
 
 
 class TokenSampler:
