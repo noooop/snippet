@@ -41,6 +41,7 @@ def benchmark(args):
         gpu_memory_utilization=args.gpu_memory_utilization,
         enable_prefix_caching=args.enable_prefix_caching,
         max_num_batched_tokens=512,
+        max_num_seqs=1
     )
 
     requests = get_requests(args)
@@ -109,7 +110,7 @@ if __name__ == "__main__":
 
     args.input_len = 1000
     args.output_len = 1
-    args.num_prompts = 1
+    args.num_prompts = 2
     args.num_warmup = 1
 
     args.model = "Qwen/Qwen3-4B"

@@ -1,6 +1,6 @@
 import os
 
-os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
+
 # lmcache config
 os.environ["LMCACHE_LOCAL_CPU"] = "True"
 os.environ["LMCACHE_MAX_LOCAL_CPU_SIZE"] = "20.0"

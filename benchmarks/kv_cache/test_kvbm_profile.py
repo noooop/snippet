@@ -1,8 +1,6 @@
 import os
 
-os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
-os.environ["LMCACHE_LOCAL_CPU"] = "True"
-os.environ["LMCACHE_MAX_LOCAL_CPU_SIZE"] = "20.0"
+os.environ["DYN_KVBM_CPU_CACHE_GB"] = "20.0"
 
 def get_requests(args):
     from benchmarks.kv_cache.utils import TokenSampler
@@ -37,10 +35,10 @@ def benchmark(args):
         max_tokens=1,
     )
 
-    lmcache_connector = "LMCacheConnectorV1"
     ktc = KVTransferConfig(
-        kv_connector=lmcache_connector,
+        kv_connector="DynamoConnector",
         kv_role="kv_both",
+        kv_connector_module_path="kvbm.vllm_integration.connector"
     )
 
     llm = LLM(
@@ -127,15 +125,7 @@ if __name__ == "__main__":
     args.tokenizer = args.model
     args.gpu_memory_utilization = 0.9
 
-    def test_vary_hit_rate(args):
-        for hit_rate in [0.99]:
-            args.hit_rate = hit_rate
-            process_warp_with_exc(benchmark, args)
+    args.hit_rate = 0.99
+    args.enable_prefix_caching = True
 
-    def test_vary_enable_prefix_caching(args):
-        for enable_prefix_caching in [False, True]:
-            args.enable_prefix_caching = enable_prefix_caching
-
-            test_vary_hit_rate(args)
-
-    test_vary_enable_prefix_caching(args)
+    benchmark(args)
