@@ -63,6 +63,6 @@ if __name__ == "__main__":
             f = executor.submit(benchmark_hf, args)
             f.result()
 
-    for dtype in ["float16", "float32"]:
+    for dtype in ["float16", "bfloat16", "float32"]:
         args.dtype = dtype
         run(args)
