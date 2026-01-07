@@ -30,24 +30,22 @@ def _benchmark_vllm(args):
         elapsed_time = end - start
         elapsed_time_list.append((llm.n_step, elapsed_time))
 
-        if llm.n_step % 1000 == 1:
-            print(llm.n_step-1, elapsed_time*1000)
-
+        print(llm.n_step, elapsed_time*1000)
         llm.n_step += 1
 
         return out
 
     llm.llm_engine.step = step
 
-    # i1o3
+    # i1o5
     prompts = TokensPrompt(prompt_token_ids=[100])
     sampling_params = llm.get_default_sampling_params()
-    sampling_params.max_tokens = 3
+    sampling_params.max_tokens = 5
     sampling_params.ignore_eos = True
 
     llm.start_profile()
     outputs = llm.generate(prompts, sampling_params)
-    llm.start_profile()
+    llm.stop_profile()
 
 
 def benchmark_vllm(args):
@@ -77,4 +75,4 @@ if __name__ == "__main__":
         args.tokenizer = args.model
         run(args)
 
-# VLLM_TORCH_PROFILER_DIR=/share/profiles python profile.py
+# VLLM_TORCH_PROFILER_DIR=./profiles python profile.py
