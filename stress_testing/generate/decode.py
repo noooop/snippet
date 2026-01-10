@@ -189,7 +189,7 @@ def main(
     )
 
     print(log)
-    with open(filename + f".{n_clients}.{instance_id}.txt", "wa") as f:
+    with open(filename + f".{n_clients}.{instance_id}.txt", "w") as f:
         f.write(log)
 
     tasks = [
@@ -229,7 +229,8 @@ def main(
     if filename is not None:
         Path(filename).parent.mkdir(parents=True, exist_ok=True)
         np.save(filename + f".{n_clients}.{instance_id}", metrics)
-        with open(filename + f".{n_clients}.{instance_id}.txt", "wa") as f:
+        with open(filename + f".{n_clients}.{instance_id}.txt", "w") as f:
+            f.write(log)
             f.write(log2)
 
 
