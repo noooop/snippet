@@ -128,7 +128,7 @@ def main(
     metrics = np.array(metrics)
 
     a, b, res = linear_fitting(metrics)
-    print(f"TPOT:{a:.4f} +1ms:{b:.0f} std:{res**0.5:.4f}ms")
+    print(f"TPOT:{a:.4f}ms +1ms:{b:.0f} std:{res**0.5:.4f}ms")
 
     if filename is not None:
         instance_id = f"{time.time_ns()}"
