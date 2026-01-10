@@ -169,7 +169,7 @@ def main(
     log_interval: int | None = None,
 ):
     if available_kv_cache is not None:
-        max_tokens = min(max_tokens, available_kv_cache // n_clients)
+        max_tokens = min(max_tokens, int(available_kv_cache *0.95) // n_clients)
 
     if log_interval is None:
         l = math.log10(max_tokens)
@@ -189,6 +189,8 @@ def main(
     )
 
     print(log)
+    with open(filename + f".{n_clients}.{instance_id}.txt", "wa") as f:
+        f.write(log)
 
     tasks = [
         Task(
@@ -226,9 +228,8 @@ def main(
 
     if filename is not None:
         Path(filename).parent.mkdir(parents=True, exist_ok=True)
-        np.save(filename + f".{max_tokens}.{instance_id}", metrics)
-        with open(filename + f".{max_tokens}.{instance_id}.txt", "w") as f:
-            f.write(log)
+        np.save(filename + f".{n_clients}.{instance_id}", metrics)
+        with open(filename + f".{n_clients}.{instance_id}.txt", "wa") as f:
             f.write(log2)
 
 
