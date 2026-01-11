@@ -139,7 +139,7 @@ LR = """
 ----------------------------------------------
 Result
 ----------------------------------------------
-MAIN n_clients:{n_clients} TPOT:{a:.4f}ms +1ms:{b:.0f} std:{res:.4f}ms
+ALL n_clients: {n_clients} TPOT: {a:.4f} ms +1 ms: {b:.0f} std: {res:.4f} ms
 ==============================================
 """
 
@@ -147,14 +147,14 @@ HR = """
 ----------------------------------------------
 Result
 ----------------------------------------------
-ALL n_clients:{n_clients} TPOT:{a:.4f}ms +1ms:{b:.0f} std:{res:.4f}ms
-R10 n_clients:{n_clients} TPOT:{o[0][0]:.4f}ms +1ms:{o[0][1]:.0f} std:{o[0][2]:.4f}ms
-R25 n_clients:{n_clients} TPOT:{o[1][0]:.4f}ms +1ms:{o[1][1]:.0f} std:{o[1][2]:.4f}mss
-R50 n_clients:{n_clients} TPOT:{o[2][0]:.4f}ms +1ms:{o[2][1]:.0f} std:{o[2][2]:.4f}ms
-R75 n_clients:{n_clients} TPOT:{o[3][0]:.4f}ms +1ms:{o[3][1]:.0f} std:{o[3][2]:.4f}ms
-R90 n_clients:{n_clients} TPOT:{o[3][0]:.4f}ms +1ms:{o[4][1]:.0f} std:{o[4][2]:.4f}ms
-Rmax n_clients:{n_clients} TPOT:{o[5][0]:.4f}ms +1ms:{o[5][1]:.0f} std:{o[5][2]:.4f}ms
-MAIN n_clients:{n_clients} TPOT:{o[6][0]:.4f}ms +1ms:{o[6][1]:.0f} std:{o[6][2]:.4f}ms
+ALL n_clients: {n_clients} TPOT: {a:.4f} ms +1 ms: {b:.0f} std: {res:.4f} ms
+R10 n_clients: {n_clients} TPOT: {o[0][0]:.4f} ms +1 ms: {o[0][1]:.0f} std: {o[0][2]:.4f} ms
+R25 n_clients: {n_clients} TPOT: {o[1][0]:.4f} ms +1 ms: {o[1][1]:.0f} std: {o[1][2]:.4f} ms
+R50 n_clients: {n_clients} TPOT: {o[2][0]:.4f} ms +1 ms: {o[2][1]:.0f} std: {o[2][2]:.4f} ms
+R75 n_clients: {n_clients} TPOT: {o[3][0]:.4f} ms +1 ms: {o[3][1]:.0f} std: {o[3][2]:.4f} ms
+R90 n_clients: {n_clients} TPOT: {o[3][0]:.4f} ms +1 ms: {o[4][1]:.0f} std: {o[4][2]:.4f} ms
+Rmax n_clients: {n_clients} TPOT: {o[5][0]:.4f} ms +1 ms: {o[5][1]:.0f} std: {o[5][2]:.4f} ms
+R2-8 n_clients: {n_clients} TPOT: {o[6][0]:.4f} ms +1 ms: {o[6][1]:.0f} std: {o[6][2]:.4f} ms
 ==============================================
 """
 
@@ -216,7 +216,7 @@ def main(
     metrics = [x[:min_n] for x in metrics]
     metrics = np.array(metrics)
 
-    if n_clients < 10:
+    if n_clients < 4:
         a, b, res = linear_fitting(metrics)
         log2 = LR.format(a=a, b=b, res=res**0.5, n_clients=n_clients)
     else:
