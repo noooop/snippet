@@ -189,8 +189,11 @@ def main(
     )
 
     print(log)
-    with open(filename + f".{n_clients}.{instance_id}.txt", "w") as f:
-        f.write(log)
+
+    if filename is not None:
+        Path(filename).parent.mkdir(parents=True, exist_ok=True)
+        with open(filename + f".{n_clients}.{instance_id}.txt", "w") as f:
+            f.write(log)
 
     tasks = [
         Task(
@@ -227,7 +230,6 @@ def main(
     print(log2)
 
     if filename is not None:
-        Path(filename).parent.mkdir(parents=True, exist_ok=True)
         np.save(filename + f".{n_clients}.{instance_id}", metrics)
         with open(filename + f".{n_clients}.{instance_id}.txt", "w") as f:
             f.write(log)
