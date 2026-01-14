@@ -169,7 +169,7 @@ def main(
     log_interval: int | None = None,
 ):
     if available_kv_cache is not None:
-        max_tokens = min(max_tokens, int(available_kv_cache *0.95) // n_clients)
+        max_tokens = min(max_tokens, int(available_kv_cache * 0.8) // n_clients)
 
     if log_interval is None:
         l = math.log10(max_tokens)
