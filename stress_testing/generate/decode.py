@@ -167,6 +167,7 @@ def main(
     n_gevent_clients: int = 16,
     available_kv_cache: int | None = None,
     log_interval: int | None = None,
+    instance_id: str | None = None,
 ):
     if available_kv_cache is not None:
         max_tokens = min(max_tokens, int(available_kv_cache * 0.8) // n_clients)
@@ -175,7 +176,8 @@ def main(
         l = math.log10(max_tokens)
         log_interval = 10 ** max(int(l) - 2, 0)
 
-    instance_id = f"{time.time_ns()}"
+    if instance_id is None:
+        instance_id = f"{time.time_ns()}"
 
     log = HEAD.format(
         instance_id=instance_id,
@@ -287,6 +289,13 @@ if __name__ == "__main__":
         help="Log interval for request 0 (default: auto-calculated based on max_tokens)",
     )
 
+    parser.add_argument(
+        "--instance_id",
+        type=str,
+        default=None,
+        help="Instance id",
+    )
+
     args = parser.parse_args()
 
     main(
@@ -297,4 +306,5 @@ if __name__ == "__main__":
         n_gevent_clients=args.n_gevent_clients,
         available_kv_cache=args.available_kv_cache,
         log_interval=args.log_interval,
+        instance_id=args.instance_id,
     )
