@@ -14,7 +14,7 @@ class Task:
     model: str
     req_id: int
     total: int
-    max_tokens: int
+    output_len: int
     log_interval: int
 
 
@@ -29,7 +29,7 @@ def worker(task: Task):
     pload = {
         "model": task.model,
         "prompt": [[100]],
-        "max_tokens": task.max_tokens,
+        "output_len": task.output_len,
         "ignore_eos": True,
         "stream": True,
     }
@@ -128,7 +128,7 @@ Config:
 ----------------------------------------------
 instance_id: {instance_id}
 model: {model}
-max_tokens: {max_tokens}
+output_len: {output_len}
 n_clients: {n_clients}
 filename: {filename}
 n_gevent_clients: {n_gevent_clients}
@@ -161,7 +161,7 @@ R2-8 n_clients: {n_clients} TPOT: {o[6][0]:.4f} ms +1 ms: {o[6][1]:.0f} std: {o[
 
 def main(
     model: str,
-    max_tokens: int,
+    output_len: int,
     n_clients: int,
     filename: str | None = None,
     n_gevent_clients: int = 16,
@@ -170,10 +170,10 @@ def main(
     instance_id: str | None = None,
 ):
     if available_kv_cache is not None:
-        max_tokens = min(max_tokens, int(available_kv_cache * 0.8) // n_clients)
+        output_len = min(output_len, int(available_kv_cache * 0.8) // n_clients)
 
     if log_interval is None:
-        l = math.log10(max_tokens)
+        l = math.log10(output_len)
         log_interval = 10 ** max(int(l) - 2, 0)
 
     if instance_id is None:
@@ -182,7 +182,7 @@ def main(
     log = HEAD.format(
         instance_id=instance_id,
         model=model,
-        max_tokens=max_tokens,
+        output_len=output_len,
         n_clients=n_clients,
         filename=filename,
         n_gevent_clients=n_gevent_clients,
@@ -202,7 +202,7 @@ def main(
             model=model,
             req_id=req_id,
             total=n_clients,
-            max_tokens=max_tokens,
+            output_len=output_len,
             log_interval=log_interval,
         )
         for req_id in range(n_clients)
@@ -251,7 +251,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--max-tokens",
+        "--output-len",
         type=int,
         default=160000,
         help="Maximum tokens to generate per request",
@@ -279,14 +279,14 @@ if __name__ == "__main__":
         "--available-kv-cache",
         type=int,
         default=None,
-        help="Available KV cache size (if provided, adjusts max_tokens per client)",
+        help="Available KV cache size (if provided, adjusts output_len per client)",
     )
 
     parser.add_argument(
         "--log-interval",
         type=int,
         default=None,
-        help="Log interval for request 0 (default: auto-calculated based on max_tokens)",
+        help="Log interval for request 0 (default: auto-calculated based on output_len)",
     )
 
     parser.add_argument(
@@ -300,7 +300,7 @@ if __name__ == "__main__":
 
     main(
         model=args.model,
-        max_tokens=args.max_tokens,
+        output_len=args.output_len,
         n_clients=args.n_clients,
         filename=args.filename,
         n_gevent_clients=args.n_gevent_clients,

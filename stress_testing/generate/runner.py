@@ -24,7 +24,7 @@ class EngineArgs:
     moe_simulation: bool
 
     log_file: str
-    max_tokens: int
+    output_len: int
     n_clients_list: list[int]
 
 
@@ -108,8 +108,8 @@ def benchmark(
         args.model,
         "--filename",
         str(args.log_file),
-        "--max-tokens",
-        str(args.max_tokens),
+        "--output-len",
+        str(args.output_len),
         "--n-clients",
         str(n_clients),
         "--available-kv-cache",
@@ -226,7 +226,7 @@ def parse_engine_args():
     parser.add_argument(
         "--async-scheduling",
         action="store_true",
-        default=False,
+        default=True,
         help="Enable asynchronous scheduling",
     )
 
@@ -255,7 +255,7 @@ def parse_engine_args():
     )
 
     parser.add_argument(
-        "--max-tokens",
+        "--output-len",
         type=int,
         default=160000,
         help="Maximum tokens to generate per request",
@@ -283,7 +283,7 @@ def parse_engine_args():
         enable_expert_parallel=args.enable_expert_parallel,
         moe_simulation=args.moe_simulation,
         log_file=args.log_file,
-        max_tokens=args.max_tokens,
+        output_len=args.output_len,
         n_clients_list=args.n_clients_list,
     )
 
