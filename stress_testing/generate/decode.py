@@ -29,7 +29,7 @@ def worker(task: Task):
     pload = {
         "model": task.model,
         "prompt": [[100]],
-        "output_len": task.output_len,
+        "max_tokens": task.output_len,
         "ignore_eos": True,
         "stream": True,
     }
