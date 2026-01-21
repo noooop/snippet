@@ -4,7 +4,7 @@
 import numpy as np
 
 
-def main(filename: str):
+def main(filename: str, log_interval:int=100):
     metrics = np.load(filename)
     b, n = metrics.shape
     sorted_metrics = np.sort(metrics, axis=0)
@@ -17,7 +17,6 @@ def main(filename: str):
     b80 = int(b * 0.8)
     b90 = int(b * 0.9)
 
-    print("10% 20% 25% 25% 50% 75% 80% 90%")
     for i, (a, b, c, d, e, f, g) in enumerate(zip(sorted_metrics[b10],
                                                   sorted_metrics[b20],
                                                   sorted_metrics[b25],
@@ -26,7 +25,8 @@ def main(filename: str):
                                                   sorted_metrics[b80],
                                                   sorted_metrics[b90])
                                               ):
-        print(i, a*1000, b*1000, c*1000, d*1000, e*1000, f*1000, g*1000)
+        if i%log_interval==0:
+            print(i, d*1000)
 
 if __name__ == "__main__":
     import sys
