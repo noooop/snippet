@@ -53,16 +53,16 @@ def test_prefill(num_batched_tokens):
     g = torch.cuda.CUDAGraph()
     with torch.cuda.graph(g):
         function_under_test()
-    torch.accelerator.synchronize()
+    torch.cuda.synchronize()
     function_under_test = lambda: g.replay()
 
     n_iters = 100
 
-    torch.accelerator.synchronize()
+    torch.cuda.synchronize()
     start = time.perf_counter()
     for _ in range(n_iters):
         function_under_test()
-        torch.accelerator.synchronize()
+        torch.cuda.synchronize()
     end = time.perf_counter()
     print("num_batched_tokens:", num_batched_tokens, (end - start) / n_iters)
 
@@ -135,16 +135,16 @@ def test_decode(seqlen_k):
     g = torch.cuda.CUDAGraph()
     with torch.cuda.graph(g):
         function_under_test()
-    torch.accelerator.synchronize()
+    torch.cuda.synchronize()
     function_under_test = lambda: g.replay()
 
     n_iters = 100
 
-    torch.accelerator.synchronize()
+    torch.cuda.synchronize()
     start = time.perf_counter()
     for _ in range(n_iters):
         function_under_test()
-        torch.accelerator.synchronize()
+        torch.cuda.synchronize()
     end = time.perf_counter()
     print("seqlen_k:", seqlen_k, (end - start) / n_iters)
 
@@ -233,16 +233,16 @@ def test_prefill_decode(seqlen_k):
     g = torch.cuda.CUDAGraph()
     with torch.cuda.graph(g):
         function_under_test()
-    torch.accelerator.synchronize()
+    torch.cuda.synchronize()
     function_under_test = lambda: g.replay()
 
     n_iters = 100
 
-    torch.accelerator.synchronize()
+    torch.cuda.synchronize()
     start = time.perf_counter()
     for _ in range(n_iters):
         function_under_test()
-        torch.accelerator.synchronize()
+        torch.cuda.synchronize()
     end = time.perf_counter()
     print("seqlen_k:", seqlen_k, (end - start) / n_iters)
 
@@ -324,16 +324,16 @@ def test_decode_prefill(seqlen_k):
     g = torch.cuda.CUDAGraph()
     with torch.cuda.graph(g):
         function_under_test()
-    torch.accelerator.synchronize()
+    torch.cuda.synchronize()
     function_under_test = lambda: g.replay()
 
     n_iters = 100
 
-    torch.accelerator.synchronize()
+    torch.cuda.synchronize()
     start = time.perf_counter()
     for _ in range(n_iters):
         function_under_test()
-        torch.accelerator.synchronize()
+        torch.cuda.synchronize()
     end = time.perf_counter()
     print("seqlen_k:", seqlen_k, (end - start) / n_iters)
 
