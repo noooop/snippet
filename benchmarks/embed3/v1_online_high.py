@@ -91,7 +91,7 @@ def _benchmark(args):
                 f"n_clients {n_clients}, Batchsize {args.batchsize}, Throughput: "
                 f"{len(prompts) / elapsed_time:.4f} requests/s, "
                 f"{len(prompts * input_len) / elapsed_time:.4f} tokens/s, "
-                f"Latency {e2e * 1000:0.2f} ms"
+                f"Latency {e2e * 1000:0.2f} ms, std {std * 1000:0.2f} ms"
             )
 
 
@@ -134,7 +134,7 @@ if __name__ == "__main__":
     args.batchsizes = [128]
     args.input_len = [512]
     args.n_clients_list = [1, 2, 4, 8, 16, 32, 64, 128]
-    args.api_server_count = 4
+    args.api_server_count = 1
     args.enforce_eager = False
 
     run(args)

@@ -137,7 +137,7 @@ if __name__ == "__main__":
     args.batchsizes = [128]
     args.input_len = [512]
     args.n_clients_list = [1, 2, 4, 8, 16, 32, 64, 128]
-    args.api_server_count = 4
+    args.api_server_count = 1
     args.enforce_eager = False
 
     run(args)
