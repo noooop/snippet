@@ -86,6 +86,7 @@ def _benchmark(args):
             end = time.perf_counter()
             elapsed_time = end - start
             e2e = np.mean(metrics_list)
+            std = np.std(metrics_list)
 
             print(
                 f"n_clients {n_clients}, Batchsize {args.batchsize}, Throughput: "
