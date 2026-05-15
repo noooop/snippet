@@ -2,6 +2,7 @@ import os
 
 os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
 os.environ["OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"] = "http/protobuf"
+os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = "http://localhost:4318/v1/traces"
 
 import subprocess
 import time
