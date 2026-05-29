@@ -1,0 +1,59 @@
+services:
+  tempo:
+    image: grafana/tempo:latest
+    command: "-target=all -config.file=/etc/tempo.yaml"
+    restart: always
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200" # tempo
+      - "4317:4317" # Tempo OTLP GRPC
+      - "4318:4318" # Tempo OTLP HTTP
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318
+
+  alloy:
+    image: grafana/alloy:v1.16.1@sha256:51aeb9d829239345070619dad3edd6873186f913c84f45b365b74574fcb38ec0
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    environment:
+      - ALLOY_OTLP_UPSTREAM=tempo:4317
+    ports:
+      - "12345:12345"
+      - "4319:4317"
+    depends_on:
+      - tempo
+
+  # supporting services - metrics, visualization and testing
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - --config.file=/etc/prometheus.yaml
+      - --web.enable-remote-write-receiver
+      - --enable-feature=exemplar-storage
+      - --enable-feature=native-histograms
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus.yaml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:13.0.1@sha256:0f86bada30d65ef9d0183b90c1e2682ac92d53d95da8bed322b984ea78a4a73a
+    volumes:
+      - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor metricsSummary
+    ports:
+      - "3000:3000"
+
+volumes:
+  tempo-data:
