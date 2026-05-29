@@ -7,16 +7,18 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import SpanKind
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+    OTLPSpanExporter as OTLPGrpcExporter,
+)
 
 resource_attrs = {
     "service.name": "dummy_client",
 }
 
-endpoint = "http://localhost:4318/v1/traces"
+endpoint = "http://localhost:4317"
 resource = Resource.create(resource_attrs)
 trace_provider = TracerProvider(resource=resource)
-exporter = OTLPSpanExporter(endpoint=endpoint)
+exporter = OTLPGrpcExporter(endpoint=endpoint, insecure=True)
 trace_provider.add_span_processor(BatchSpanProcessor(exporter))
 tracer = trace_provider.get_tracer("dummy_client")
 

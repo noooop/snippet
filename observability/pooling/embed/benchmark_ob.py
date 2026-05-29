@@ -1,8 +1,8 @@
 import os
 
 os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
-os.environ["OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"] = "http/protobuf"
-os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = "http://localhost:4318/v1/traces"
+os.environ["OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"] = "grpc"
+os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = "http://localhost:4317"
 
 import subprocess
 import time
@@ -25,7 +25,7 @@ def run_server(args):
         str(args.api_server_count),
         "--disable-uvicorn-access-log",
         "--otlp-traces-endpoint",
-        "http://localhost:4318/v1/traces",
+        "http://localhost:4317",
     ]
 
     if args.enforce_eager:
@@ -100,6 +100,8 @@ def _benchmark(args):
                 f"{len(prompts * input_len) / elapsed_time:.4f} tokens/s, "
                 f"Latency {e2e * 1000:0.2f} ms, std {std * 1000:0.2f} ms"
             )
+
+            time.sleep(60)
 
 
 def benchmark(args):
