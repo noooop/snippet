@@ -28,7 +28,7 @@ def format_size_gb(size, decimal_places=4, use_binary=True):
     return f"{size:.{decimal_places}f} {units[exponent]}"
 
 
-size = 2**32  # 4G
+size = 2**34  # 16G
 dtype = torch.uint8
 
 host_raw = torch.randn(size // 4, dtype=torch.float32, device="cpu").view(dtype)
