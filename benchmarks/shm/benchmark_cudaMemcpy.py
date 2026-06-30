@@ -2,7 +2,7 @@ import random
 import time
 
 import torch
-
+from vllm.v1.simple_kv_offload.cuda_mem_ops import pin_tensor
 
 def format_size(size, decimal_places=4, use_binary=True):
     if size == 0:
@@ -33,7 +33,7 @@ dtype = torch.uint8
 
 host_raw = torch.randn(size // 4, dtype=torch.float32, device="cpu").view(dtype)
 device_raw = torch.randn(size // 4, dtype=torch.float32, device="cuda").view(dtype)
-# pin_tensor(host_raw)
+pin_tensor(host_raw)
 
 print(format_size(host_raw.nelement() * host_raw.element_size()))
 
