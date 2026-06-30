@@ -13,6 +13,7 @@ from util import (
 )
 
 from vllm.v1.simple_kv_offload.cuda_mem_ops import pin_tensor
+from vllm import _custom_ops as ops
 
 
 shm_src, process_src, stop_event_src = get_shm(size)
@@ -45,12 +46,13 @@ with torch.inference_mode():
                 for _ in range(n_iters)
             ]
 
+            block_mapping_tensor = torch.tensor(tasks, dtype=torch.int64, device="cpu")
+
             torch.accelerator.synchronize()
 
             start = time.perf_counter()
 
-            for i, j in tasks:
-                device[i] = host[j]
+            ops.swap_blocks(host, device, block_size, block_mapping_tensor)
 
             torch.accelerator.synchronize()
 
@@ -75,18 +77,18 @@ with torch.inference_mode():
         bs, _ = host.size()
 
         def test(n_iters):
-
             tasks = [
                 (random.randint(0, bs - 1), random.randint(0, bs - 1))
                 for _ in range(n_iters)
             ]
 
+            block_mapping_tensor = torch.tensor(tasks, dtype=torch.int64, device="cpu")
+
             torch.accelerator.synchronize()
 
             start = time.perf_counter()
 
-            for i, j in tasks:
-                host[i] = device[j]
+            ops.swap_blocks(device, host, block_size, block_mapping_tensor)
 
             torch.accelerator.synchronize()
 
@@ -99,7 +101,6 @@ with torch.inference_mode():
 
         bw = block_size * n_iters / elapsed_time_s
         print(f"size: {format_size(block_size)}, Bandwidth: {format_size_gb(bw)}/s")
-
 
 del host, device
 time.sleep(1)

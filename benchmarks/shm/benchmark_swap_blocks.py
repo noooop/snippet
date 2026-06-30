@@ -1,32 +1,16 @@
 import random
 import time
-import numpy as np
+
 import torch
-
-from util import (
-    format_size,
-    format_size_gb,
-    size,
-    n_iters,
-    get_shm,
-    np_dtype,
-)
-
+from util import format_size, format_size_gb, size, dtype, n_iters
 from vllm.v1.simple_kv_offload.cuda_mem_ops import pin_tensor
+from vllm import _custom_ops as ops
 
-
-shm_src, process_src, stop_event_src = get_shm(size)
-
-host_raw = torch.from_numpy(np.ndarray(size, dtype=np_dtype, buffer=shm_src.buf))
-device_raw = torch.randn(size // 4, dtype=torch.float32, device="cuda").view(
-    torch.uint8
-)
-
-host_raw[:] = torch.randn(size // 4, dtype=torch.float32, device="cpu").view(
-    torch.uint8
-)
-
+host_raw = torch.randn(size // 4, dtype=torch.float32, device="cpu").view(dtype)
+device_raw = torch.randn(size // 4, dtype=torch.float32, device="cuda").view(dtype)
 pin_tensor(host_raw)
+
+print(format_size(host_raw.nelement() * host_raw.element_size()))
 
 
 print("random H2D")
@@ -45,12 +29,13 @@ with torch.inference_mode():
                 for _ in range(n_iters)
             ]
 
+            block_mapping_tensor = torch.tensor(tasks, dtype=torch.int64, device="cpu")
+
             torch.accelerator.synchronize()
 
             start = time.perf_counter()
 
-            for i, j in tasks:
-                device[i] = host[j]
+            ops.swap_blocks(host, device, block_size, block_mapping_tensor)
 
             torch.accelerator.synchronize()
 
@@ -75,18 +60,18 @@ with torch.inference_mode():
         bs, _ = host.size()
 
         def test(n_iters):
-
             tasks = [
                 (random.randint(0, bs - 1), random.randint(0, bs - 1))
                 for _ in range(n_iters)
             ]
 
+            block_mapping_tensor = torch.tensor(tasks, dtype=torch.int64, device="cpu")
+
             torch.accelerator.synchronize()
 
             start = time.perf_counter()
 
-            for i, j in tasks:
-                host[i] = device[j]
+            ops.swap_blocks(device, host, block_size, block_mapping_tensor)
 
             torch.accelerator.synchronize()
 
@@ -99,11 +84,3 @@ with torch.inference_mode():
 
         bw = block_size * n_iters / elapsed_time_s
         print(f"size: {format_size(block_size)}, Bandwidth: {format_size_gb(bw)}/s")
-
-
-del host, device
-time.sleep(1)
-
-stop_event_src.set()
-process_src.join()
-shm_src.close()

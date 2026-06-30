@@ -10,6 +10,7 @@ from util import (
     n_iters,
     get_shm,
     np_dtype,
+    swap_blocks_batch,
 )
 
 from vllm.v1.simple_kv_offload.cuda_mem_ops import pin_tensor
@@ -39,18 +40,24 @@ with torch.inference_mode():
         bs, _ = host.size()
 
         def test(n_iters):
-
             tasks = [
                 (random.randint(0, bs - 1), random.randint(0, bs - 1))
                 for _ in range(n_iters)
             ]
 
+            src_addrs = torch.tensor(
+                [host[i].data_ptr() for i, j in tasks], dtype=torch.int64
+            ).to("cuda")
+            dst_addrs = torch.tensor(
+                [device[j].data_ptr() for i, j in tasks], dtype=torch.int64
+            ).to("cuda")
+            sizes = torch.tensor([block_size] * n_iters, dtype=torch.int64).to("cuda")
+
             torch.accelerator.synchronize()
 
             start = time.perf_counter()
 
-            for i, j in tasks:
-                device[i] = host[j]
+            swap_blocks_batch(src_addrs, dst_addrs, sizes, bytes_per_chunk=8192)
 
             torch.accelerator.synchronize()
 
@@ -59,7 +66,7 @@ with torch.inference_mode():
             return elapsed_time_s
 
         test(n_iters=3)
-        elapsed_time_s = test(n_iters)
+        elapsed_time_s = test(n_iters=n_iters)
 
         bw = block_size * n_iters / elapsed_time_s
         print(f"size: {format_size(block_size)}, Bandwidth: {format_size_gb(bw)}/s")
@@ -75,18 +82,24 @@ with torch.inference_mode():
         bs, _ = host.size()
 
         def test(n_iters):
-
             tasks = [
                 (random.randint(0, bs - 1), random.randint(0, bs - 1))
                 for _ in range(n_iters)
             ]
 
+            src_addrs = torch.tensor(
+                [device[i].data_ptr() for i, j in tasks], dtype=torch.int64
+            ).to("cuda")
+            dst_addrs = torch.tensor(
+                [host[j].data_ptr() for i, j in tasks], dtype=torch.int64
+            ).to("cuda")
+            sizes = torch.tensor([block_size] * n_iters, dtype=torch.int64).to("cuda")
+
             torch.accelerator.synchronize()
 
             start = time.perf_counter()
 
-            for i, j in tasks:
-                host[i] = device[j]
+            swap_blocks_batch(src_addrs, dst_addrs, sizes, bytes_per_chunk=8192)
 
             torch.accelerator.synchronize()
 
@@ -95,11 +108,10 @@ with torch.inference_mode():
             return elapsed_time_s
 
         test(n_iters=3)
-        elapsed_time_s = test(n_iters)
+        elapsed_time_s = test(n_iters=n_iters)
 
         bw = block_size * n_iters / elapsed_time_s
         print(f"size: {format_size(block_size)}, Bandwidth: {format_size_gb(bw)}/s")
-
 
 del host, device
 time.sleep(1)
