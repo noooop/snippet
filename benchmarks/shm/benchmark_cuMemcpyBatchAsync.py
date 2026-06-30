@@ -5,6 +5,7 @@ import torch
 from vllm.v1.simple_kv_offload.cuda_mem_ops import pin_tensor
 from vllm import _custom_ops as ops
 
+
 def format_size(size, decimal_places=4, use_binary=True):
     if size == 0:
         return "0 B"
@@ -55,8 +56,12 @@ with torch.inference_mode():
             for _ in range(n_iters)
         ]
 
-        src_addrs = torch.tensor([host[i] for i, j in tasks], dtype=torch.int64)
-        dst_addrs = torch.tensor([device[j] for i, j in tasks], dtype=torch.int64)
+        src_addrs = torch.tensor(
+            [host[i].data_ptr() for i, j in tasks], dtype=torch.int64
+        )
+        dst_addrs = torch.tensor(
+            [device[j].data_ptr() for i, j in tasks], dtype=torch.int64
+        )
         sizes = torch.tensor([block_size] * n_iters, dtype=torch.int64)
 
         torch.accelerator.synchronize()
@@ -93,8 +98,12 @@ with torch.inference_mode():
             for _ in range(n_iters)
         ]
 
-        src_addrs = torch.tensor([device[i] for i, j in tasks], dtype=torch.int64)
-        dst_addrs = torch.tensor([host[j] for i, j in tasks], dtype=torch.int64)
+        src_addrs = torch.tensor(
+            [device[i].data_ptr() for i, j in tasks], dtype=torch.int64
+        )
+        dst_addrs = torch.tensor(
+            [host[j].data_ptr() for i, j in tasks], dtype=torch.int64
+        )
         sizes = torch.tensor([block_size] * n_iters, dtype=torch.int64)
 
         torch.accelerator.synchronize()
