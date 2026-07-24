@@ -232,9 +232,9 @@ def run_dynamic(total_bytes, block_sizes, n_iters):
 
     def copy_func(src_indices, dst_indices, block_bytes):
         s_view = fixed_src.view(-1, block_bytes)
-        # Iterate over all indices (all zeros) and clone each block
         for idx in src_indices:
-            _ = s_view[idx].clone()                   # allocate + copy
+            tensor_copy = s_view[idx].clone()
+            assert s_view.numpy().ctypes.data != tensor_copy.numpy().ctypes.data
 
     with torch.inference_mode():
         return measure_bandwidth(copy_func, total_bytes, block_sizes, n_iters,
