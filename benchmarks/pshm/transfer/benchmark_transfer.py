@@ -135,6 +135,8 @@ def _zmq_server(conn, stop_event: Event):
     # Bind to an available IPC path
     address = get_open_zmq_ipc_path()
     socket = context.socket(zmq.ROUTER)
+    socket.setsockopt(zmq.SNDBUF, 64 * 1024 * 1024)
+    socket.setsockopt(zmq.RCVBUF, 64 * 1024 * 1024)
     socket.bind(address)
 
     # Notify parent process of the address
@@ -219,6 +221,8 @@ class Client:
 
     def _init_sock(self) -> zmq.Socket:
         sock = self._ctx.socket(zmq.REQ)
+        sock.setsockopt(zmq.SNDBUF, 64 * 1024 * 1024)
+        sock.setsockopt(zmq.RCVBUF, 64 * 1024 * 1024)
         sock.connect(self._address)
         return sock
 
