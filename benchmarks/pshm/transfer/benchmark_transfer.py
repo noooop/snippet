@@ -19,6 +19,7 @@ import torch
 
 try:
     import zmq
+
     HAS_ZMQ = True
 except ImportError:
     HAS_ZMQ = False
@@ -28,10 +29,12 @@ except ImportError:
 # ---------------------------------------------------------------------------
 try:
     import matplotlib.pyplot as plt
+
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
     print("Warning: matplotlib not available – plot will be skipped.")
+
 
 # ---------------------------------------------------------------------------
 # Formatting helpers
@@ -49,7 +52,7 @@ def format_size(
     base = 1024 if use_binary else 1000
     if target_unit is not None:
         target_exp = units.index(target_unit)
-        size = num_bytes / (base ** target_exp)
+        size = num_bytes / (base**target_exp)
         return f"{size:.{decimal_places}f} {target_unit}"
     exponent = 0
     size = num_bytes
@@ -110,6 +113,7 @@ def generate_random_indices(num_blocks: int, n_iters: int) -> tuple:
     dst_idx = np.array([t[1] for t in tasks], dtype=np.intp)
     return src_idx, dst_idx
 
+
 def generate_random_src_indices(num_blocks: int, n_iters: int) -> np.ndarray:
     """Return a numpy array of source indices only."""
     return np.random.randint(0, num_blocks, size=n_iters, dtype=np.intp)
@@ -119,13 +123,15 @@ def generate_random_src_indices(num_blocks: int, n_iters: int) -> np.ndarray:
 # ZMQ server / client (adapted from provided code)
 # ---------------------------------------------------------------------------
 POLL_INTERVAL = 1000
-EMPTY = b''
-OK = b'OK'
+EMPTY = b""
+OK = b"OK"
+
 
 def get_open_zmq_ipc_path():
     """Return an available IPC path for ZMQ binding."""
     import tempfile
     import uuid
+
     return f"ipc://{tempfile.gettempdir()}/zmq-{uuid.uuid4().hex}.sock"
 
 
@@ -172,12 +178,13 @@ def _zmq_server(conn, stop_event: Event):
         expected_size = struct.unpack("<I", size_frame.buffer)[0]
         assert expected_size == len(payload.buffer)
 
-        if copy_flag == b'c':
+        if copy_flag == b"c":
             arr = np.frombuffer(payload.buffer, dtype=np.uint8)
             arr_copy = arr.copy()
             # Assert that the copy allocated a new memory region
-            assert arr.ctypes.data != arr_copy.ctypes.data, \
+            assert arr.ctypes.data != arr_copy.ctypes.data, (
                 "ZMQ copy mode: data was NOT copied to a new memory region!"
+            )
 
         # Send OK response
         socket.send_multipart([identity, EMPTY, OK])
@@ -311,7 +318,9 @@ def run_zmq(total_bytes, block_sizes, n_iters, copy_mode=False):
     src_np = src.numpy()
 
     mode_str = "copy" if copy_mode else "no_copy"
-    print(f"Allocated {format_size(src.nelement() * src.element_size())} for ZMQ source (mode={mode_str})")
+    print(
+        f"Allocated {format_size(src.nelement() * src.element_size())} for ZMQ source (mode={mode_str})"
+    )
 
     # Use spawn context to avoid fork/spawn SemLock issues
     ctx = mp.get_context("spawn")
@@ -377,7 +386,7 @@ def print_results_table(block_sizes: list, results: dict):
             if bw is None:
                 row.append("N/A")
             else:
-                gib_s = bw / (1024 ** 3)
+                gib_s = bw / (1024**3)
                 row.append(f"{gib_s:.4f}")
         print("| " + " | ".join(row) + " |")
 
@@ -402,7 +411,7 @@ def plot_results(block_sizes: list, results: dict, output_file: str = None):
         for bs, bw in zip(block_sizes, bw_list):
             if bw is not None:
                 x_vals.append(bs)
-                y_vals.append(bw / (1024 ** 3))
+                y_vals.append(bw / (1024**3))
         if not x_vals:
             continue
         ax.plot(
@@ -425,7 +434,9 @@ def plot_results(block_sizes: list, results: dict, output_file: str = None):
     ax.set_ylabel("Bandwidth (GiB/s)")
     ax.set_ylim(bottom=0)
     ax.yaxis.set_major_formatter(plt.ScalarFormatter(useOffset=False))
-    ax.set_title(f"CPU Block Copy Bandwidth (memcpy vs ZMQ no-copy vs ZMQ copy)\n({sys_info})")
+    ax.set_title(
+        f"CPU Block Copy Bandwidth (memcpy vs ZMQ no-copy vs ZMQ copy)\n({sys_info})"
+    )
     ax.grid(True, which="both", linestyle="--", linewidth=0.5)
     ax.legend()
     fig.tight_layout()
@@ -447,7 +458,7 @@ def main():
     parser.add_argument(
         "--size",
         type=int,
-        default=2 ** 32,
+        default=2**32,
         help="Total memory allocated in bytes (must be divisible by block sizes). Default: 2**32 (4 GiB).",
     )
     parser.add_argument(
@@ -488,7 +499,7 @@ def main():
 
     total_bytes = args.size
     n_iters = args.n_iters
-    block_sizes = [2 ** n for n in range(args.min_block_exp, args.max_block_exp + 1)]
+    block_sizes = [2**n for n in range(args.min_block_exp, args.max_block_exp + 1)]
 
     max_block = block_sizes[-1]
     if total_bytes % max_block != 0:
@@ -507,7 +518,9 @@ def main():
 
     if not args.skip_zmq:
         print("\n=== Benchmark: ZMQ no-copy ===")
-        results["zmq_no_copy"] = run_zmq(total_bytes, block_sizes, n_iters, copy_mode=False)
+        results["zmq_no_copy"] = run_zmq(
+            total_bytes, block_sizes, n_iters, copy_mode=False
+        )
         print("\n=== Benchmark: ZMQ copy ===")
         results["zmq_copy"] = run_zmq(total_bytes, block_sizes, n_iters, copy_mode=True)
     else:

@@ -10,10 +10,7 @@ Results are printed as a Markdown table and a bandwidth plot is generated.
 """
 
 import argparse
-import os
 import platform
-import random
-import sys
 import time
 
 import numpy as np
@@ -47,7 +44,7 @@ def format_size(
     base = 1024 if use_binary else 1000
     if target_unit is not None:
         target_exp = units.index(target_unit)
-        size = num_bytes / (base ** target_exp)
+        size = num_bytes / (base**target_exp)
         return f"{size:.{decimal_places}f} {target_unit}"
     exponent = 0
     size = num_bytes
@@ -87,7 +84,7 @@ def get_system_info() -> str:
                 if line.startswith("MemTotal:"):
                     parts = line.split()
                     mem_kb = int(parts[1])
-                    mem_str = f"{mem_kb / (1024 ** 2):.1f} GiB"
+                    mem_str = f"{mem_kb / (1024**2):.1f} GiB"
                     break
     except Exception:
         mem_str = "unknown"
@@ -113,8 +110,10 @@ def measure_bandwidth(
     Returns a list of bandwidths in bytes/s, one per block_size.
     """
     if indices_generator is None:
+
         def default_gen(num_blocks, n_iters):
             return generate_random_indices(num_blocks, n_iters)
+
         indices_generator = default_gen
 
     bandwidths = []
@@ -155,23 +154,33 @@ def run_random_read(total_bytes, block_sizes, n_iters):
     dtype = torch.uint8
     max_block = max(block_sizes)
     src_big = torch.randn(total_bytes // 4, dtype=torch.float32).view(dtype)
-    fixed_dst = torch.zeros(max_block, dtype=dtype)   # fixed target buffer (size max_block)
-    print(f"Allocated {format_size(total_bytes)} for src_big and {format_size(max_block)} for fixed_dst (random_read)")
+    fixed_dst = torch.zeros(
+        max_block, dtype=dtype
+    )  # fixed target buffer (size max_block)
+    print(
+        f"Allocated {format_size(total_bytes)} for src_big and {format_size(max_block)} for fixed_dst (random_read)"
+    )
 
     def indices_gen(num_blocks, n_iters):
         src_idx = np.random.randint(0, num_blocks, size=n_iters, dtype=np.intp)
-        dst_idx = np.zeros(n_iters, dtype=np.intp)    # always write to block 0
+        dst_idx = np.zeros(n_iters, dtype=np.intp)  # always write to block 0
         return src_idx, dst_idx
 
     def copy_func(src_indices, dst_indices, block_bytes):
         s_view = src_big.view(-1, block_bytes)
-        d_view = fixed_dst.view(-1, block_bytes)     # shape (1, block_bytes)
+        d_view = fixed_dst.view(-1, block_bytes)  # shape (1, block_bytes)
         for i, j in zip(src_indices, dst_indices):
-            d_view[j] = s_view[i]                    # j is always 0
+            d_view[j] = s_view[i]  # j is always 0
 
     with torch.inference_mode():
-        return measure_bandwidth(copy_func, total_bytes, block_sizes, n_iters,
-                                 "random_read", indices_generator=indices_gen)
+        return measure_bandwidth(
+            copy_func,
+            total_bytes,
+            block_sizes,
+            n_iters,
+            "random_read",
+            indices_generator=indices_gen,
+        )
 
 
 def run_random_write(total_bytes, block_sizes, n_iters):
@@ -182,22 +191,30 @@ def run_random_write(total_bytes, block_sizes, n_iters):
     fixed_src = torch.zeros(max_block, dtype=dtype)  # fixed source buffer
     # Fill fixed_src with some data (e.g., random) so reads are meaningful
     fixed_src[:] = torch.randint(0, 256, (max_block,), dtype=dtype)
-    print(f"Allocated {format_size(total_bytes)} for dst_big and {format_size(max_block)} for fixed_src (random_write)")
+    print(
+        f"Allocated {format_size(total_bytes)} for dst_big and {format_size(max_block)} for fixed_src (random_write)"
+    )
 
     def indices_gen(num_blocks, n_iters):
-        src_idx = np.zeros(n_iters, dtype=np.intp)    # always read from block 0
+        src_idx = np.zeros(n_iters, dtype=np.intp)  # always read from block 0
         dst_idx = np.random.randint(0, num_blocks, size=n_iters, dtype=np.intp)
         return src_idx, dst_idx
 
     def copy_func(src_indices, dst_indices, block_bytes):
-        s_view = fixed_src.view(-1, block_bytes)     # shape (1, block_bytes)
+        s_view = fixed_src.view(-1, block_bytes)  # shape (1, block_bytes)
         d_view = dst_big.view(-1, block_bytes)
         for i, j in zip(src_indices, dst_indices):
-            d_view[j] = s_view[i]                    # i is always 0
+            d_view[j] = s_view[i]  # i is always 0
 
     with torch.inference_mode():
-        return measure_bandwidth(copy_func, total_bytes, block_sizes, n_iters,
-                                 "random_write", indices_generator=indices_gen)
+        return measure_bandwidth(
+            copy_func,
+            total_bytes,
+            block_sizes,
+            n_iters,
+            "random_write",
+            indices_generator=indices_gen,
+        )
 
 
 def run_random_rw(total_bytes, block_sizes, n_iters):
@@ -214,8 +231,9 @@ def run_random_rw(total_bytes, block_sizes, n_iters):
             d_view[j] = s_view[i]
 
     with torch.inference_mode():
-        return measure_bandwidth(copy_func, total_bytes, block_sizes, n_iters,
-                                 "random_rw")
+        return measure_bandwidth(
+            copy_func, total_bytes, block_sizes, n_iters, "random_rw"
+        )
 
 
 def run_dynamic(total_bytes, block_sizes, n_iters):
@@ -226,8 +244,8 @@ def run_dynamic(total_bytes, block_sizes, n_iters):
     print(f"Allocated {format_size(max_block)} for fixed_src (dynamic)")
 
     def indices_gen(num_blocks, n_iters):
-        src_idx = np.zeros(n_iters, dtype=np.intp)    # always read from block 0
-        dst_idx = np.zeros(n_iters, dtype=np.intp)    # not used
+        src_idx = np.zeros(n_iters, dtype=np.intp)  # always read from block 0
+        dst_idx = np.zeros(n_iters, dtype=np.intp)  # not used
         return src_idx, dst_idx
 
     def copy_func(src_indices, dst_indices, block_bytes):
@@ -237,8 +255,14 @@ def run_dynamic(total_bytes, block_sizes, n_iters):
             assert s_view.numpy().ctypes.data != tensor_copy.numpy().ctypes.data
 
     with torch.inference_mode():
-        return measure_bandwidth(copy_func, total_bytes, block_sizes, n_iters,
-                                 "dynamic", indices_generator=indices_gen)
+        return measure_bandwidth(
+            copy_func,
+            total_bytes,
+            block_sizes,
+            n_iters,
+            "dynamic",
+            indices_generator=indices_gen,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +289,7 @@ def print_results_table(block_sizes: list, results: dict):
             if bw is None:
                 row.append("N/A")
             else:
-                gib_s = bw / (1024 ** 3)
+                gib_s = bw / (1024**3)
                 row.append(f"{gib_s:.4f}")
         print("| " + " | ".join(row) + " |")
 
@@ -290,7 +314,7 @@ def plot_results(block_sizes: list, results: dict, output_file: str = None):
         for bs, bw in zip(block_sizes, bw_list):
             if bw is not None:
                 x_vals.append(bs)
-                y_vals.append(bw / (1024 ** 3))
+                y_vals.append(bw / (1024**3))
         if not x_vals:
             continue
         ax.plot(
@@ -335,7 +359,7 @@ def main():
     parser.add_argument(
         "--size",
         type=int,
-        default=2 ** 32,
+        default=2**32,
         help="Total memory allocated in bytes (must be divisible by block sizes). Default: 2**32 (4 GiB).",
     )
     parser.add_argument(
@@ -378,7 +402,7 @@ def main():
 
     total_bytes = args.size
     n_iters = args.n_iters
-    block_sizes = [2 ** n for n in range(args.min_block_exp, args.max_block_exp + 1)]
+    block_sizes = [2**n for n in range(args.min_block_exp, args.max_block_exp + 1)]
 
     max_block = block_sizes[-1]
     if total_bytes % max_block != 0:

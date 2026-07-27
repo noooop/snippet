@@ -32,12 +32,14 @@ import torch
 # ---------------------------------------------------------------------------
 try:
     import zmq
+
     HAS_ZMQ = True
 except ImportError:
     HAS_ZMQ = False
 
 try:
     import matplotlib.pyplot as plt
+
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
@@ -60,7 +62,7 @@ def format_size(
     base = 1024 if use_binary else 1000
     if target_unit is not None:
         target_exp = units.index(target_unit)
-        size = num_bytes / (base ** target_exp)
+        size = num_bytes / (base**target_exp)
         return f"{size:.{decimal_places}f} {target_unit}"
     exponent = 0
     size = num_bytes
@@ -73,7 +75,9 @@ def format_size(
 def format_bandwidth(bytes_per_sec: float, decimal_places: int = 4) -> str:
     """Format bandwidth in GiB/s."""
     return (
-        format_size(int(bytes_per_sec), decimal_places=decimal_places, target_unit="GiB")
+        format_size(
+            int(bytes_per_sec), decimal_places=decimal_places, target_unit="GiB"
+        )
         + "/s"
     )
 
@@ -128,6 +132,7 @@ def generate_random_src_indices(num_blocks: int, n_iters: int) -> np.ndarray:
 # Shared memory helpers (for the 'shm' scenario)
 # ---------------------------------------------------------------------------
 
+
 def _create_shm_tensor(size):
     parent_conn, child_conn = mp.Pipe()
     stop_event = mp.Event()
@@ -180,8 +185,8 @@ def _shm_worker(size: int, conn: mp.connection.Connection, stop_event: mp.Event)
 # ZMQ server and client (used for both 'zmq' and 'zmq+shm')
 # ---------------------------------------------------------------------------
 POLL_INTERVAL = 1000
-EMPTY = b''
-OK = b'OK'
+EMPTY = b""
+OK = b"OK"
 
 
 def get_open_zmq_ipc_path():
@@ -196,6 +201,7 @@ class ZmqServerProc:
     total_bytes: total shared memory size (only used for 'zmq+shm')
     shm_name: name of shared memory segment (only for 'zmq+shm')
     """
+
     def __init__(self, stop_event: Event, mode: str, shm_name: str, total_bytes: int):
         self.mode = mode
         self.total_bytes = total_bytes
@@ -204,7 +210,7 @@ class ZmqServerProc:
         parent_conn, child_conn = ctx.Pipe()
         self.proc = ctx.Process(
             target=_zmq_server_worker,
-            args=(child_conn, stop_event, mode, shm_name, total_bytes)
+            args=(child_conn, stop_event, mode, shm_name, total_bytes),
         )
         self.stop_event = stop_event
         self.parent_conn = parent_conn
@@ -243,7 +249,7 @@ def _zmq_server_worker(conn, stop_event, mode, shm_name, total_bytes):
     arr = None
     if shm_name:
         with patch(
-                "multiprocessing.resource_tracker.register", lambda *args, **kwargs: None
+            "multiprocessing.resource_tracker.register", lambda *args, **kwargs: None
         ):
             shm = shared_memory.SharedMemory(name=shm_name)
         arr = np.ndarray(total_bytes, dtype=np.uint8, buffer=shm.buf)
@@ -272,7 +278,7 @@ def _zmq_server_worker(conn, stop_event, mode, shm_name, total_bytes):
         if len(frames) < 3:
             continue
 
-        if mode == 'zmq':
+        if mode == "zmq":
             # Format: identity, delimiter, flag, size_frame, payload
             if len(frames) < 5:
                 continue
@@ -288,12 +294,12 @@ def _zmq_server_worker(conn, stop_event, mode, shm_name, total_bytes):
             idx = struct.unpack("<Q", idx_frame.buffer)[0]
             expected_size = struct.unpack("<I", size_frame.buffer)[0]
             copy_data = struct.unpack("<?", copy_flag_frame.buffer)[0]
-            start = idx * expected_size   # block starts at idx * block_size
+            start = idx * expected_size  # block starts at idx * block_size
             if start + expected_size > total_bytes:
-                socket.send_multipart([identity, EMPTY, b'ERROR'])
+                socket.send_multipart([identity, EMPTY, b"ERROR"])
                 continue
 
-            payload = arr[start:start + expected_size]
+            payload = arr[start : start + expected_size]
             if copy_data:
                 # Perform the actual copy from shared memory to a local buffer
                 payload = payload.copy()
@@ -312,6 +318,7 @@ class ZmqClient:
       - request_data(payload)        for 'zmq' mode
       - request_index(idx, size, copy_flag) for 'zmq+shm' mode
     """
+
     def __init__(self, address: str, init_pool_size: int = 4):
         self._address = address
         self._ctx = zmq.Context()
@@ -329,7 +336,7 @@ class ZmqClient:
         """Send a data block (for 'zmq' mode)."""
         sock = self._pool.pop() if self._pool else self._init_sock()
         size_frame = struct.pack("<I", len(payload))
-        sock.send_multipart([b'', size_frame, payload], copy=False)
+        sock.send_multipart([b"", size_frame, payload], copy=False)
         sock.recv_multipart(copy=False)
         self._pool.append(sock)
 
@@ -421,7 +428,9 @@ def run_shm(total_bytes, block_sizes, n_iters):
                 d_view[i] = s_view[j]
 
         with torch.inference_mode():
-            return measure_bandwidth(copy_func, total_bytes, block_sizes, n_iters, "shm")
+            return measure_bandwidth(
+                copy_func, total_bytes, block_sizes, n_iters, "shm"
+            )
 
 
 def run_zmq(total_bytes, block_sizes, n_iters):
@@ -437,7 +446,7 @@ def run_zmq(total_bytes, block_sizes, n_iters):
 
     ctx = mp.get_context("spawn")
     stop_event = ctx.Event()
-    server = ZmqServerProc(stop_event, mode='zmq', total_bytes=total_bytes, shm_name="")
+    server = ZmqServerProc(stop_event, mode="zmq", total_bytes=total_bytes, shm_name="")
     server.start()
     print(f"ZMQ server (zmq) bound to {server.address}")
 
@@ -490,7 +499,9 @@ def run_zmq_shm(total_bytes, block_sizes, n_iters, copy_data=True):
         print(f"Allocated {format_size(total_bytes)} for shm")
 
         # Start server once; use the source shared memory for reading
-        server = ZmqServerProc(stop_event, mode='zmq+shm', total_bytes=total_bytes, shm_name=shm_src.name)
+        server = ZmqServerProc(
+            stop_event, mode="zmq+shm", total_bytes=total_bytes, shm_name=shm_src.name
+        )
         server.start()
         print(f"ZMQ server (zmq+shm) bound to {server.address}")
 
@@ -522,7 +533,9 @@ def run_zmq_shm(total_bytes, block_sizes, n_iters, copy_data=True):
 
             bw = (bs_bytes * n_iters) / elapsed
             bandwidths.append(bw)
-            print(f"[{label}] size: {format_size(bs_bytes)}, Bandwidth: {format_bandwidth(bw)}")
+            print(
+                f"[{label}] size: {format_size(bs_bytes)}, Bandwidth: {format_bandwidth(bw)}"
+            )
 
     server.close()
     return bandwidths
@@ -687,8 +700,12 @@ def main():
     for name in args.bench:
         if name == "zmq+shm":
             # Run both copy and no-copy variants
-            results["zmq+shm (copy)"] = run_zmq_shm(total_bytes, block_sizes, n_iters, copy_data=True)
-            results["zmq+shm (no-copy)"] = run_zmq_shm(total_bytes, block_sizes, n_iters, copy_data=False)
+            results["zmq+shm (copy)"] = run_zmq_shm(
+                total_bytes, block_sizes, n_iters, copy_data=True
+            )
+            results["zmq+shm (no-copy)"] = run_zmq_shm(
+                total_bytes, block_sizes, n_iters, copy_data=False
+            )
         else:
             if name in benchmarks:
                 print(f"\n=== Benchmark: {name} ===")
