@@ -13,7 +13,7 @@ from .utils import Test, benchmark
 class CudaU8ToBf16Copy(Test):
     """uint8 -> bf16 copy implemented as a raw CUDA kernel."""
 
-    use_cuda_graph = False
+    use_cuda_graph = True
     clear_l2_cache = True
     warmup_iters = 20
     bench_iters = 200
@@ -22,6 +22,8 @@ class CudaU8ToBf16Copy(Test):
 
     # ----- CUDA source ----------------------------------------------------
     cuda_src = r"""
+    #include <torch/extension.h>
+    #include <c10/cuda/CUDAStream.h>
     #include <cuda_runtime.h>
     #include <cuda_bf16.h>
     #include <cstdint>
@@ -79,7 +81,12 @@ class CudaU8ToBf16Copy(Test):
         // One thread per 4 elements, rounded up.
         int blocks = (int)((n / 4 + threads - 1) / threads);
 
-        u8_to_bf16_vec4_kernel<<<blocks, threads>>>(
+        // Use the current PyTorch stream so CUDA-graph capture picks up the
+        // kernel instead of silently launching on the legacy default stream
+        // (which would result in an empty graph).
+        auto stream = c10::cuda::getCurrentCUDAStream();
+
+        u8_to_bf16_vec4_kernel<<<blocks, threads, 0, stream>>>(
             x.data_ptr<unsigned char>(),
             reinterpret_cast<__nv_bfloat16*>(y.data_ptr<at::BFloat16>()),
             n);

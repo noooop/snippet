@@ -67,7 +67,7 @@ class UseTriton(Naive):
 
     # ----- Test interface --------------------------------------------------
     def function_under_test(self) -> None:
-        mm_input_norm.fused_input_norm_kernel(
+        mm_input_norm.fused_input_norm_triton(
             self.inputs,
             self._outputs,
             self.weight,
