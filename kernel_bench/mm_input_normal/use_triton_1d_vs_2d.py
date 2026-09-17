@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Benchmark: 1D flat-index vs 2D tiled fused input-norm kernels."""
 
-from __future__ import annotations
-
-from typing import Any
-
 import torch
 import triton
 import triton.language as tl
@@ -88,8 +84,6 @@ _TL_DTYPE = {
 # Shared base: tensor setup + accounting (mirrors Naive)
 # ===========================================================================
 class _FusedNormBase(Test):
-    warmup_iters = 20
-    bench_iters = 200
     use_cuda_graph = True
     verify = True
     clear_l2_cache = True
@@ -200,9 +194,6 @@ class FusedNorm2D(_FusedNormBase):
         )
 
 
-# ===========================================================================
-# Driver
-# ===========================================================================
 if __name__ == "__main__":
     # Fixed shape: (patches, channel, embed_size) = (2^n, 3, 1024).
     # Sweep patches so the L2-flush effect becomes visible once inputs

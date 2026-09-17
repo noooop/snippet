@@ -9,9 +9,6 @@ a single pass over ``(N, C, L)``. This is the implementation the benchmark is
 ultimately validating; the eager / BN / ``torch.compile`` baselines exist to
 quantify how much the fused kernel actually buys.
 """
-
-from __future__ import annotations
-
 from typing import Any
 
 import torch
@@ -44,13 +41,6 @@ class UseTriton(Naive):
     """
 
     use_cuda_graph = True
-
-    # Triton JIT-compiles on first call; keep enough warmup to cover that plus
-    # the CUDA-graph capture pass.
-    warmup_iters = 20
-    bench_iters = 200
-
-    # Verify against the eager reference to catch kernel regressions.
     verify = True
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -67,7 +57,7 @@ class UseTriton(Naive):
 
     # ----- Test interface --------------------------------------------------
     def function_under_test(self) -> None:
-        mm_input_norm.fused_input_norm_triton(
+        mm_input_norm.fused_mm_input_norm_triton(
             self.inputs,
             self._outputs,
             self.weight,

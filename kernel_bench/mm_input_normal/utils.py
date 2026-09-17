@@ -38,7 +38,7 @@ from typing import Any
 import torch
 
 
-__all__ = ["Test", "benchmark", "format_size"]
+__all__ = ["Test", "benchmark", "format_size", "format_gb"]
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +57,14 @@ def format_size(
         size /= base
         exponent += 1
     return f"{size:.{decimal_places}f} {units[exponent]}"
+
+
+def format_gb(
+    size: float, decimal_places: int = 2, use_binary: bool = True
+) -> str:
+    """Format a byte count always in GB (GiB when use_binary=True)."""
+    base = 1024 if use_binary else 1000
+    return f"{size / (base ** 3):.{decimal_places}f} GB"
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +253,7 @@ def benchmark(
         f"[{name}] compute={str(compute_dtype).replace('torch.', '')}, "
         f"nelement: {format_size(nelement)}, "
         f"size: {format_size(size)}, "
-        f"bw: {format_size(bandwidth)}/s"
+        f"bw: {format_gb(bandwidth)}/s"
     )
 
     return bandwidth
