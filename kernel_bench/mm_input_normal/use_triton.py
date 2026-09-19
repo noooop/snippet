@@ -19,18 +19,6 @@ from .utils import benchmark
 import vllm.model_executor.layers.fusion.mm_input_norm as mm_input_norm
 
 
-# The kernel module restricts ``compute_dtype`` to fp32 to guarantee numerical
-# safety. For benchmarking, we deliberately allow lower-precision compute to
-# measure the throughput difference. This override is scoped to the import of
-# this module; production code paths that import ``mm_input_norm`` directly are
-# unaffected.
-mm_input_norm._SUPPORTED_COMPUTE = (
-    torch.float16,
-    torch.bfloat16,
-    torch.float32,
-)
-
-
 class UseTriton(Naive):
     """Triton fused kernel adapter.
 
@@ -62,7 +50,6 @@ class UseTriton(Naive):
             self._outputs,
             self.weight,
             self.bias,
-            compute_dtype=self.compute_dtype,
         )
 
 
@@ -70,31 +57,30 @@ if __name__ == "__main__":
     print("Test Triton!")
 
     for inputs_dtype in [torch.uint8]:
-        for compute_dtype in [torch.float32, torch.bfloat16]:
-            for outputs_dtype in [torch.bfloat16]:
-                for embed_size in [1024]:
-                    for n in range(8, 19):
-                        try:
-                            benchmark(
-                                UseTriton,
-                                compute_dtype,
-                                inputs_dtype=inputs_dtype,
-                                outputs_dtype=outputs_dtype,
-                                patches=2**n,
-                                channel=3,
-                                embed_size=embed_size,
-                                label=(
-                                    f"UseTriton[in={str(inputs_dtype).replace('torch.', '')},"
-                                    f"out={str(outputs_dtype).replace('torch.', '')},"
-                                    f"L={embed_size}]"
-                                ),
-                            )
-                        except torch.cuda.OutOfMemoryError:
-                            print(
-                                f"OOM at in={inputs_dtype}, out={outputs_dtype}, "
-                                f"L={embed_size}, patches=2**{n}; skipping."
-                            )
-                            torch.cuda.empty_cache()
-                            continue
+        for outputs_dtype in [torch.bfloat16]:
+            for embed_size in [1024]:
+                for n in range(8, 19):
+                    try:
+                        benchmark(
+                            UseTriton,
+                            compute_dtype=torch.float32,
+                            inputs_dtype=inputs_dtype,
+                            outputs_dtype=outputs_dtype,
+                            patches=2**n,
+                            channel=3,
+                            embed_size=embed_size,
+                            label=(
+                                f"UseTriton[in={str(inputs_dtype).replace('torch.', '')},"
+                                f"out={str(outputs_dtype).replace('torch.', '')},"
+                                f"L={embed_size}]"
+                            ),
+                        )
+                    except torch.cuda.OutOfMemoryError:
+                        print(
+                            f"OOM at in={inputs_dtype}, out={outputs_dtype}, "
+                            f"L={embed_size}, patches=2**{n}; skipping."
+                        )
                         torch.cuda.empty_cache()
+                        continue
+                    torch.cuda.empty_cache()
         torch.cuda.empty_cache()
