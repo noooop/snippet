@@ -14,6 +14,9 @@ Recommended run (NUMA binding on dual-socket machines):
     python block_copy_mt.py
 
 Result Xeon Gold 6554S:
+
+OMP_PROC_BIND=close OMP_PLACES=cores numactl --cpunodebind=0 --membind=0 python block_copy_mt.py --threads 1 2 4 8 12 16 20 24 28 32 36
+
  threads     bandwidth (GiB/s)
 ------------------------------------------------------------
   1 (st)                  7.91
