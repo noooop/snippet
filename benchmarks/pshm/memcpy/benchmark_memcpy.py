@@ -3,8 +3,8 @@
 Benchmark CPU block copy bandwidth in four scenarios:
   1. memcpy     – ordinary CPU tensor random read + write (Python loop)
   2. shm        – same operation on tensors backed by shared memory (Python loop)
-  3. cython     – Cython‑accelerated memcpy on ordinary CPU tensors
-  4. cython_shm – Cython‑accelerated memcpy on shared memory tensors
+  3. cython_shm – Cython + OpenMP intra-block parallel copy on shared memory tensors
+  4. cython_mt  – Cython + OpenMP intra-block parallel copy on ordinary CPU tensors
 
 Results are printed as a Markdown table and a bandwidth plot is generated.
 """
@@ -16,8 +16,10 @@ import os
 import platform
 import random
 import sys
+import tempfile
 import time
 from multiprocessing import shared_memory
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -36,58 +38,143 @@ except ImportError:
 
 # ---------------------------------------------------------------------------
 # Cython integration
+# Manual cythonize + Extension build (proven to work with OpenMP).
+# Avoids pyximport, which silently drops -fopenmp in some environments.
 # ---------------------------------------------------------------------------
-try:
-    import pyximport
-
-    pyximport.install()
-
-    _cython_code = """
-import cython
+CYTHON_SOURCE = r'''
+# cython: boundscheck=False, wraparound=False, cdivision=True, language_level=3
 from libc.string cimport memcpy
+from cython.parallel cimport prange
 
-@cython.cdivision
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cdef void _cython_block_copy(
-    const unsigned char* src,
-    unsigned char* dst,
-    const Py_ssize_t* src_indices,
-    const Py_ssize_t* dst_indices,
-    Py_ssize_t n_blocks,
-    Py_ssize_t block_bytes) noexcept nogil:
-    cdef Py_ssize_t i
-    for i in range(n_blocks):
-        memcpy(dst + dst_indices[i] * block_bytes,
-               src + src_indices[i] * block_bytes,
-               block_bytes)
+cdef extern from "omp.h" nogil:
+    void omp_set_num_threads(int num_threads)
+    int  omp_get_max_threads()
+    int  omp_get_num_threads()
 
-@cython.cdivision
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cpdef void cython_block_copy(
-    const unsigned char[:] src,
+
+# ---------------------------------------------------------------------------
+# Intra-block parallel copy (OpenMP).
+# Each block is split into T sub-chunks; multiple threads copy different
+# parts of the same block concurrently. Total tasks = n_blocks * T.
+# ---------------------------------------------------------------------------
+cpdef void cython_block_copy_mt(
+    unsigned char[:] src,
     unsigned char[:] dst,
     const Py_ssize_t[:] src_indices,
     const Py_ssize_t[:] dst_indices,
-    Py_ssize_t block_bytes):
+    Py_ssize_t block_bytes,
+    int n_threads=0,
+):
     cdef Py_ssize_t n = src_indices.shape[0]
-    _cython_block_copy(&src[0], &dst[0], &src_indices[0], &dst_indices[0],
-                       n, block_bytes)
-"""
-    _tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "__pyx_tmp")
-    os.makedirs(_tmp_dir, exist_ok=True)
-    _pyx_path = os.path.join(_tmp_dir, "_block_copy.pyx")
-    with open(_pyx_path, "w") as f:
-        f.write(_cython_code)
-    sys.path.append(_tmp_dir)
-    from _block_copy import cython_block_copy
+    if n == 0:
+        return
 
+    cdef unsigned char* s = &src[0]
+    cdef unsigned char* d = &dst[0]
+    cdef const Py_ssize_t* si = &src_indices[0]
+    cdef const Py_ssize_t* di = &dst_indices[0]
+
+    cdef int T
+    if n_threads > 0:
+        with nogil:
+            omp_set_num_threads(n_threads)
+        T = n_threads
+    else:
+        with nogil:
+            T = omp_get_max_threads()
+    if T < 1:
+        T = 1
+
+    cdef Py_ssize_t subchunk = (block_bytes + T - 1) // T
+    cdef Py_ssize_t total = n * T
+    cdef Py_ssize_t t, blk, tid, offset, length
+
+    with nogil:
+        for t in prange(total, schedule='static'):
+            blk = t // T
+            tid = t % T
+            offset = tid * subchunk
+            if offset >= block_bytes:
+                continue
+            length = subchunk
+            if offset + length > block_bytes:
+                length = block_bytes - offset
+            memcpy(d + di[blk] * block_bytes + offset,
+                   s + si[blk] * block_bytes + offset,
+                   length)
+'''
+
+
+def _build_cython_module(verbose: bool = True):
+    """Compile the Cython source with OpenMP and return the module."""
+    import numpy as np
+    from Cython.Build import cythonize
+    from setuptools import Extension
+    from setuptools.dist import Distribution
+
+    build_dir = Path(tempfile.mkdtemp(prefix="block_copy_mt_"))
+    pyx_path = build_dir / "_block_copy.pyx"
+    pyx_path.write_text(CYTHON_SOURCE)
+
+    common = {
+        "name": "_block_copy",
+        "sources": [str(pyx_path)],
+        "include_dirs": [np.get_include()],
+        "extra_link_args": ["-fopenmp"],
+    }
+
+    # Try progressively more conservative flag sets.
+    flags_list = [
+        ["-O3", "-fopenmp", "-march=native", "-funroll-loops", "-ftree-vectorize"],
+        ["-O3", "-fopenmp", "-mavx2"],
+        ["-O3", "-fopenmp"],
+    ]
+
+    last_err = None
+    for flags in flags_list:
+        try:
+            ext = Extension(extra_compile_args=flags, **common)
+            dist = Distribution({
+                "ext_modules": cythonize(
+                    [ext],
+                    compiler_directives={
+                        "boundscheck": False,
+                        "wraparound": False,
+                        "cdivision": True,
+                        "language_level": 3,
+                    },
+                    quiet=not verbose,
+                )
+            })
+            cmd = dist.get_command_obj("build_ext")
+            cmd.inplace = 1
+            cmd.build_lib = str(build_dir)
+            cmd.build_temp = str(build_dir / "build")
+            cmd.ensure_finalized()
+            if not verbose:
+                cmd.verbose = 0
+            cmd.run()
+            if verbose:
+                print(f"[build] compiled with flags={flags}")
+            sys.path.insert(0, str(build_dir))
+            return __import__("_block_copy")
+        except Exception as e:
+            last_err = e
+            if verbose:
+                print(f"[build] flags={flags} failed: {e}")
+            continue
+
+    raise RuntimeError(f"Failed to compile Cython module: {last_err}")
+
+
+try:
+    _mod = _build_cython_module()
+    cython_block_copy_mt = _mod.cython_block_copy_mt
     HAS_CYTHON = True
-    print("Cython block copy module loaded successfully.")
+    print("Cython block copy module loaded successfully (OpenMP enabled).")
 except Exception as e:
     HAS_CYTHON = False
-    cython_block_copy = None
+    cython_block_copy_mt = None
     print(f"Cython not available ({e}) – cython benchmarks disabled.")
 
 
@@ -158,61 +245,10 @@ def get_system_info() -> str:
 # ---------------------------------------------------------------------------
 # Shared memory helper
 # ---------------------------------------------------------------------------
-class SharedMemoryTensor:
-    """Manages a single shared memory segment wrapped as a torch tensor."""
-
-    def __init__(self, size: int):
-        self.size = size
-        self._shm = None
-        self._process = None
-        self._stop_event = mp.Event()
-        self._tensor = None
-
-    def __enter__(self):
-        """Create the shared memory segment in a worker process and map it."""
-        parent_conn, child_conn = mp.Pipe()
-        self._process = mp.Process(
-            target=self._worker, args=(child_conn, self._stop_event)
-        )
-        self._process.start()
-        shm_name = parent_conn.recv()
-        parent_conn.close()
-
-        # Avoid double registration in resource tracker
-        with patch(
-            "multiprocessing.resource_tracker.register", lambda *args, **kwargs: None
-        ):
-            self._shm = shared_memory.SharedMemory(name=shm_name)
-
-        np_dtype = np.dtype(np.uint8)
-        arr = np.ndarray(self.size, dtype=np_dtype, buffer=self._shm.buf)
-        self._tensor = torch.from_numpy(arr)
-        return self._tensor
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Signal the worker and clean up resources."""
-        # Release the tensor and numpy array to allow shm cleanup
-        del self._tensor
-        self._shm.close()
-        self._stop_event.set()
-        self._process.join()
-        self._shm.unlink()
-        return False
-
-    @staticmethod
-    def _worker(conn, stop_event):
-        """Worker that creates a shared memory segment and waits for stop."""
-        conn.recv()
-        pass
-
-
-# We'll use a simpler factory function with a context manager over two segments.
 @contextlib.contextmanager
 def shared_tensor_pair(total_bytes: int):
     """Context manager that yields (src_tensor, dst_tensor) backed by shared memory."""
 
-    # Create two shared memory segments each in its own worker.
-    # We adapt the original get_shm logic into a small helper.
     def _create_shm_tensor(size):
         parent_conn, child_conn = mp.Pipe()
         stop_event = mp.Event()
@@ -314,7 +350,6 @@ def run_memcpy(total_bytes, block_sizes, n_iters):
     print(f"Allocated {format_size(src.nelement() * src.element_size())} for memcpy")
 
     def copy_func(src_indices, dst_indices, block_bytes):
-        # Views to enable 2D indexing
         s_view = src.view(-1, block_bytes)
         d_view = dst.view(-1, block_bytes)
         for i, j in zip(src_indices, dst_indices):
@@ -327,7 +362,6 @@ def run_memcpy(total_bytes, block_sizes, n_iters):
 def run_shm(total_bytes, block_sizes, n_iters):
     """Shared memory tensor copy using Python loop."""
     with shared_tensor_pair(total_bytes) as (src, dst):
-        # Fill with random data
         src[:] = torch.randn(total_bytes // 4, dtype=torch.float32).view(torch.uint8)
         dst[:] = torch.randn(total_bytes // 4, dtype=torch.float32).view(torch.uint8)
         print(f"Allocated {format_size(total_bytes)} for shm")
@@ -344,28 +378,8 @@ def run_shm(total_bytes, block_sizes, n_iters):
             )
 
 
-def run_cython(total_bytes, block_sizes, n_iters):
-    """Cython-accelerated block copy on ordinary CPU tensors."""
-    if not HAS_CYTHON:
-        print("Cython not available, skipping benchmark.")
-        return [None] * len(block_sizes)
-
-    dtype = torch.uint8
-    src = torch.randn(total_bytes // 4, dtype=torch.float32).view(dtype)
-    dst = torch.randn(total_bytes // 4, dtype=torch.float32).view(dtype)
-    print(f"Allocated {format_size(src.nelement() * src.element_size())} for cython")
-
-    src_flat = src.numpy()
-    dst_flat = dst.numpy()
-
-    def copy_func(src_indices, dst_indices, block_bytes):
-        cython_block_copy(src_flat, dst_flat, src_indices, dst_indices, block_bytes)
-
-    return measure_bandwidth(copy_func, total_bytes, block_sizes, n_iters, "cython")
-
-
-def run_cython_shm(total_bytes, block_sizes, n_iters):
-    """Cython-accelerated block copy on shared memory tensors."""
+def run_cython_shm(total_bytes, block_sizes, n_iters, n_threads):
+    """Cython + OpenMP intra-block parallel copy on shared memory tensors."""
     if not HAS_CYTHON:
         print("Cython not available, skipping benchmark.")
         return [None] * len(block_sizes)
@@ -373,17 +387,47 @@ def run_cython_shm(total_bytes, block_sizes, n_iters):
     with shared_tensor_pair(total_bytes) as (src, dst):
         src[:] = torch.randn(total_bytes // 4, dtype=torch.float32).view(torch.uint8)
         dst[:] = torch.randn(total_bytes // 4, dtype=torch.float32).view(torch.uint8)
-        print(f"Allocated {format_size(total_bytes)} for cython_shm")
+        label = f"cython_shm_{n_threads}" if n_threads > 0 else "cython_shm_auto"
+        print(
+            f"Allocated {format_size(total_bytes)} "
+            f"for {label} (n_threads={n_threads})"
+        )
 
         src_flat = src.numpy()
         dst_flat = dst.numpy()
 
         def copy_func(src_indices, dst_indices, block_bytes):
-            cython_block_copy(src_flat, dst_flat, src_indices, dst_indices, block_bytes)
+            cython_block_copy_mt(
+                src_flat, dst_flat, src_indices, dst_indices, block_bytes, n_threads
+            )
 
-        return measure_bandwidth(
-            copy_func, total_bytes, block_sizes, n_iters, "cython_shm"
+        return measure_bandwidth(copy_func, total_bytes, block_sizes, n_iters, label)
+
+
+def run_cython_mt(total_bytes, block_sizes, n_iters, n_threads):
+    """Cython + OpenMP intra-block parallel copy on ordinary CPU tensors."""
+    if not HAS_CYTHON:
+        print("Cython not available, skipping benchmark.")
+        return [None] * len(block_sizes)
+
+    dtype = torch.uint8
+    src = torch.randn(total_bytes // 4, dtype=torch.float32).view(dtype)
+    dst = torch.randn(total_bytes // 4, dtype=torch.float32).view(dtype)
+    label = f"cython_mt_{n_threads}" if n_threads > 0 else "cython_mt_auto"
+    print(
+        f"Allocated {format_size(src.nelement() * src.element_size())} "
+        f"for {label} (n_threads={n_threads})"
+    )
+
+    src_flat = src.numpy()
+    dst_flat = dst.numpy()
+
+    def copy_func(src_indices, dst_indices, block_bytes):
+        cython_block_copy_mt(
+            src_flat, dst_flat, src_indices, dst_indices, block_bytes, n_threads
         )
+
+    return measure_bandwidth(copy_func, total_bytes, block_sizes, n_iters, label)
 
 
 # ---------------------------------------------------------------------------
@@ -418,8 +462,8 @@ def print_results_table(block_sizes: list, results: dict):
 def plot_results(block_sizes: list, results: dict, output_file: str = None):
     """
     Bandwidth plot (GiB/s vs block size).
-    X‑axis: log2, human‑readable ticks.
-    Y‑axis: linear, starting at 0.
+    X-axis: log2, human-readable ticks.
+    Y-axis: linear, starting at 0.
     System information is included in the plot title.
     """
     if not HAS_MATPLOTLIB:
@@ -475,7 +519,10 @@ def plot_results(block_sizes: list, results: dict, output_file: str = None):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="Benchmark CPU block copy bandwidth (memcpy / shm / cython / cython_shm)."
+        description=(
+            "Benchmark CPU block copy bandwidth "
+            "(memcpy / shm / cython_shm / cython_mt)."
+        )
     )
     parser.add_argument(
         "--size",
@@ -504,9 +551,20 @@ def main():
     parser.add_argument(
         "--bench",
         nargs="+",
-        choices=["memcpy", "shm", "cython", "cython_shm"],
-        default=["memcpy", "shm", "cython", "cython_shm"],
-        help="Which benchmarks to run. Default: memcpy shm cython cython_shm.",
+        choices=["memcpy", "shm", "cython_shm", "cython_mt"],
+        default=["memcpy", "shm", "cython_shm", "cython_mt"],
+        help="Which benchmarks to run. Default: memcpy shm cython_shm cython_mt.",
+    )
+    parser.add_argument(
+        "--n-threads",
+        type=int,
+        nargs="+",
+        default=[8],
+        help=(
+            "Thread counts for cython_shm and cython_mt. "
+            "0 means use OpenMP default. "
+            "Multiple values produce multiple benchmark columns. Default: 8."
+        ),
     )
     parser.add_argument(
         "--no-plot",
@@ -534,19 +592,30 @@ def main():
         total_bytes = ((total_bytes // max_block) + 1) * max_block
         print(f"New total_bytes: {total_bytes}")
 
-    # Map benchmark names to functions
-    benchmarks = {
+    # Non-threaded benchmarks (single call, no extra parameters).
+    simple_benchmarks = {
         "memcpy": run_memcpy,
         "shm": run_shm,
-        "cython": run_cython,
+    }
+
+    # Threaded benchmarks: one column per thread count.
+    threaded_benchmarks = {
         "cython_shm": run_cython_shm,
+        "cython_mt": run_cython_mt,
     }
 
     results = {}
     for name in args.bench:
-        if name in benchmarks:
+        if name in simple_benchmarks:
             print(f"\n=== Benchmark: {name} ===")
-            results[name] = benchmarks[name](total_bytes, block_sizes, n_iters)
+            results[name] = simple_benchmarks[name](total_bytes, block_sizes, n_iters)
+        elif name in threaded_benchmarks:
+            for nt in args.n_threads:
+                key = f"{name}_{nt}" if nt > 0 else f"{name}_auto"
+                print(f"\n=== Benchmark: {key} ===")
+                results[key] = threaded_benchmarks[name](
+                    total_bytes, block_sizes, n_iters, nt
+                )
 
     if results:
         print_results_table(block_sizes, results)
