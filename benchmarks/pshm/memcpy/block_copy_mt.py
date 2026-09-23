@@ -30,6 +30,22 @@ OMP_PROC_BIND=close OMP_PLACES=cores numactl --cpunodebind=0 --membind=0 python 
       28                 84.09
       32                 41.16
       36                 40.93
+
+Result 9800x3d
+
+python block_copy_mt.py --threads 1 2 4 8 12 16
+
+ threads     bandwidth (GiB/s)
+------------------------------------------------------------
+  1 (st)                 20.78
+       2                 22.75
+       4                 22.36
+       8                 22.11
+      12                 21.80
+      16                 21.65
+
+The memory bandwidth ceiling for the 9800X3D is just ~48 GB/s.
+
 """
 
 import os
