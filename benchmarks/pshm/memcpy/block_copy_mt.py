@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 """
-Single-file Cython + OpenMP block copy benchmark.
+Benchmark CPU block copy bandwidth with random block indices.
 
-Intra-block parallelism: each block is split into n_threads sub-chunks,
-and multiple threads copy different parts of the same block concurrently.
+Test setup:
+  1. 4 GiB total buffer, filled with random data (working set >> L3)
+  2. Buffer divided into 1 MiB blocks
+  3. Each block is split into subchunk_bytes-sized tasks
+  4. Random block indices across the buffer (source and destination)
+  5. Scan thread counts to find how far multi-thread scales
+
+Backends:
+  memcpy    – libc memcpy
+  simd      – AVX-512 / AVX2 load + storeu (cached)
+  simd_nt   – AVX-512 / AVX2 load + NT store (bypasses L3)
 
 Dependencies:
     pip install cython numpy setuptools
@@ -17,19 +26,19 @@ Result Xeon Gold 6554S:
 
 OMP_PROC_BIND=close OMP_PLACES=cores numactl --cpunodebind=0 --membind=0 python block_copy_mt.py --threads 1 2 4 8 12 16 20 24 28 32 36
 
- threads     bandwidth (GiB/s)
-------------------------------------------------------------
-  1 (st)                  7.91
-       2                 15.55
-       4                 27.43
-       8                 42.62
-      12                 52.78
-      16                 64.32
-      20                 72.90
-      24                 78.79
-      28                 84.09
-      32                 41.16
-      36                 40.93
+         threads |   memcpy (GiB/s) |     simd (GiB/s) |  simd_nt (GiB/s)
+------------------------------------------------------------------------
+               1 |             5.27 |             7.07 |             7.43
+               2 |            15.46 |            14.28 |            14.32
+               4 |            27.51 |            26.46 |            25.70
+               8 |            42.94 |            38.47 |            39.43
+              12 |            55.76 |            48.35 |            48.31
+              16 |            65.29 |            55.28 |            55.06
+              20 |            73.72 |            59.58 |            60.10
+              24 |            81.97 |            67.82 |            67.41
+              28 |            86.28 |            76.51 |            76.84
+              32 |            89.43 |            86.99 |            86.97
+              36 |            89.24 |            88.62 |            89.10
 
 Result 9800x3d
 
@@ -48,16 +57,18 @@ The memory bandwidth ceiling for the 9800X3D is just ~48 GB/s.
 
 """
 
-import os
+import argparse
 import sys
 import tempfile
 import time
 from pathlib import Path
 
+import numpy as np
+
 # ---------------------------------------------------------------------------
-# Embedded Cython source
+# Cython source
 # ---------------------------------------------------------------------------
-PYX_SOURCE = r'''
+CYTHON_SOURCE = r'''
 # cython: boundscheck=False, wraparound=False, cdivision=True, language_level=3
 from libc.string cimport memcpy
 from cython.parallel cimport prange
@@ -65,24 +76,95 @@ from cython.parallel cimport prange
 cdef extern from "omp.h" nogil:
     void omp_set_num_threads(int num_threads)
     int  omp_get_max_threads()
-    int  omp_get_num_threads()
 
 
-# ---------------------------------------------------------------------------
-# Intra-block parallel copy.
-# Each block is divided into T sub-chunks; multiple threads copy different
-# parts of the same block concurrently. Total tasks = n_blocks * T.
-# ---------------------------------------------------------------------------
-cpdef void cython_block_copy_split(
+cdef extern from *:
+    """
+    #include <immintrin.h>
+    #include <stddef.h>
+    #include <stdint.h>
+    #include <string.h>
+
+    static inline void simd_copy(void* dst, const void* src, size_t n) {
+    #if defined(__AVX512F__)
+        size_t i = 0;
+        for (; i + 64 <= n; i += 64) {
+            __m512i v = _mm512_loadu_si512((const __m512i*)((const char*)src + i));
+            _mm512_storeu_si512((__m512i*)((char*)dst + i), v);
+        }
+        for (; i < n; i++) ((char*)dst)[i] = ((const char*)src)[i];
+    #elif defined(__AVX2__)
+        size_t i = 0;
+        for (; i + 32 <= n; i += 32) {
+            __m256i v = _mm256_loadu_si256((const __m256i*)((const char*)src + i));
+            _mm256_storeu_si256((__m256i*)((char*)dst + i), v);
+        }
+        for (; i < n; i++) ((char*)dst)[i] = ((const char*)src)[i];
+    #else
+        memcpy(dst, src, n);
+    #endif
+    }
+
+    static inline void simd_copy_nt(void* dst, const void* src, size_t n) {
+    #if defined(__AVX512F__)
+        if ((((uintptr_t)dst) & 63) == 0) {
+            size_t i = 0;
+            for (; i + 64 <= n; i += 64) {
+                __m512i v = _mm512_loadu_si512((const __m512i*)((const char*)src + i));
+                _mm512_stream_si512((__m512i*)((char*)dst + i), v);
+            }
+            _mm_sfence();
+            for (; i < n; i++) ((char*)dst)[i] = ((const char*)src)[i];
+        } else {
+            size_t i = 0;
+            for (; i + 64 <= n; i += 64) {
+                __m512i v = _mm512_loadu_si512((const __m512i*)((const char*)src + i));
+                _mm512_storeu_si512((__m512i*)((char*)dst + i), v);
+            }
+            for (; i < n; i++) ((char*)dst)[i] = ((const char*)src)[i];
+        }
+    #elif defined(__AVX2__)
+        if ((((uintptr_t)dst) & 31) == 0) {
+            size_t i = 0;
+            for (; i + 32 <= n; i += 32) {
+                __m256i v = _mm256_loadu_si256((const __m256i*)((const char*)src + i));
+                _mm256_stream_si256((__m256i*)((char*)dst + i), v);
+            }
+            _mm_sfence();
+            for (; i < n; i++) ((char*)dst)[i] = ((const char*)src)[i];
+        } else {
+            size_t i = 0;
+            for (; i + 32 <= n; i += 32) {
+                __m256i v = _mm256_loadu_si256((const __m256i*)((const char*)src + i));
+                _mm256_storeu_si256((__m256i*)((char*)dst + i), v);
+            }
+            for (; i < n; i++) ((char*)dst)[i] = ((const char*)src)[i];
+        }
+    #else
+        memcpy(dst, src, n);
+    #endif
+    }
+    """
+    void simd_copy(void* dst, const void* src, size_t n) nogil
+    void simd_copy_nt(void* dst, const void* src, size_t n) nogil
+
+
+cpdef void cython_block_copy_sub(
     unsigned char[:] src,
     unsigned char[:] dst,
     const Py_ssize_t[:] src_indices,
     const Py_ssize_t[:] dst_indices,
     Py_ssize_t block_bytes,
+    Py_ssize_t subchunk_bytes,
     int n_threads=0,
+    int copy_mode=0,
 ):
+    """Split each block into subchunk_bytes-sized tasks and copy in parallel.
+
+    copy_mode: 0 = simd, 1 = simd_nt, 2 = memcpy
+    """
     cdef Py_ssize_t n = src_indices.shape[0]
-    if n == 0:
+    if n == 0 or subchunk_bytes <= 0 or block_bytes <= 0:
         return
 
     cdef unsigned char* s = &src[0]
@@ -90,7 +172,6 @@ cpdef void cython_block_copy_split(
     cdef const Py_ssize_t* si = &src_indices[0]
     cdef const Py_ssize_t* di = &dst_indices[0]
 
-    # Resolve thread count: use n_threads if > 0, otherwise OpenMP default.
     cdef int T
     if n_threads > 0:
         with nogil:
@@ -102,92 +183,68 @@ cpdef void cython_block_copy_split(
     if T < 1:
         T = 1
 
-    # Sub-chunk size (rounded up to cover the whole block).
-    cdef Py_ssize_t subchunk = (block_bytes + T - 1) // T
-    cdef Py_ssize_t total = n * T
-    cdef Py_ssize_t t, blk, tid, offset, length
+    cdef Py_ssize_t splits = (block_bytes + subchunk_bytes - 1) // subchunk_bytes
+    if splits < 1:
+        splits = 1
+    cdef Py_ssize_t total = n * splits
+    cdef Py_ssize_t t, blk, sidx, offset, length, base_src, base_dst
 
     with nogil:
         for t in prange(total, schedule='static'):
-            blk = t // T          # block index
-            tid = t % T           # sub-chunk index within the block
-            offset = tid * subchunk
-            if offset >= block_bytes:
-                continue
-            length = subchunk
-            if offset + length > block_bytes:
-                length = block_bytes - offset
-            memcpy(d + di[blk] * block_bytes + offset,
-                   s + si[blk] * block_bytes + offset,
-                   length)
-
-
-# ---------------------------------------------------------------------------
-# Single-threaded baseline (whole block per memcpy).
-# ---------------------------------------------------------------------------
-cpdef void cython_block_copy_st(
-    unsigned char[:] src,
-    unsigned char[:] dst,
-    const Py_ssize_t[:] src_indices,
-    const Py_ssize_t[:] dst_indices,
-    Py_ssize_t block_bytes,
-):
-    cdef Py_ssize_t n = src_indices.shape[0]
-    if n == 0:
-        return
-
-    cdef Py_ssize_t i
-    cdef unsigned char* s = &src[0]
-    cdef unsigned char* d = &dst[0]
-    cdef const Py_ssize_t* si = &src_indices[0]
-    cdef const Py_ssize_t* di = &dst_indices[0]
-
-    with nogil:
-        for i in range(n):
-            memcpy(d + di[i] * block_bytes,
-                   s + si[i] * block_bytes,
-                   block_bytes)
+            blk = t // splits
+            sidx = t % splits
+            offset = sidx * subchunk_bytes
+            if offset < block_bytes:
+                length = subchunk_bytes
+                if offset + length > block_bytes:
+                    length = block_bytes - offset
+                base_src = si[blk] * block_bytes + offset
+                base_dst = di[blk] * block_bytes + offset
+                if copy_mode == 0:
+                    simd_copy(d + base_dst, s + base_src, length)
+                elif copy_mode == 1:
+                    simd_copy_nt(d + base_dst, s + base_src, length)
+                else:
+                    memcpy(d + base_dst, s + base_src, length)
 
 
 def get_omp_max_threads():
-    """Return OpenMP's max thread count."""
     cdef int n
     with nogil:
         n = omp_get_max_threads()
     return n
 '''
 
+COPY_MODES = {"simd": 0, "simd_nt": 1, "memcpy": 2}
+
 
 # ---------------------------------------------------------------------------
-# Runtime compilation of the Cython module
+# Build module
 # ---------------------------------------------------------------------------
-def build_module(verbose: bool = True):
-    """Compile the embedded Cython source and return the imported module."""
+def build_module(verbose=True):
     import numpy as np
     from Cython.Build import cythonize
     from setuptools import Extension
     from setuptools.dist import Distribution
 
     build_dir = Path(tempfile.mkdtemp(prefix="block_copy_mt_"))
-    pyx_path = build_dir / "block_copy_mt.pyx"
-    pyx_path.write_text(PYX_SOURCE)
+    pyx_path = build_dir / "_block_copy_mt.pyx"
+    pyx_path.write_text(CYTHON_SOURCE)
 
     common = {
-        "name": "block_copy_mt",
+        "name": "_block_copy_mt",
         "sources": [str(pyx_path)],
         "include_dirs": [np.get_include()],
         "extra_link_args": ["-fopenmp"],
     }
-
-    # Try increasingly conservative flag sets; -march=native may fail on VMs.
     flags_list = [
-        ["-O3", "-fopenmp", "-march=native", "-funroll-loops", "-ftree-vectorize"],
+        ["-O3", "-fopenmp", "-mavx512f", "-mavx512bw", "-mavx512vl",
+         "-funroll-loops", "-ftree-vectorize"],
+        ["-O3", "-fopenmp", "-march=native"],
         ["-O3", "-fopenmp", "-mavx2"],
         ["-O3", "-fopenmp"],
     ]
-
     last_err = None
-    success = False
     for flags in flags_list:
         try:
             ext = Extension(extra_compile_args=flags, **common)
@@ -211,127 +268,152 @@ def build_module(verbose: bool = True):
             if not verbose:
                 cmd.verbose = 0
             cmd.run()
-            success = True
             if verbose:
-                print(f"[build] compiled with flags={flags}")
-            break
+                print(f"[build] flags={flags}")
+            sys.path.insert(0, str(build_dir))
+            return __import__("_block_copy_mt")
         except Exception as e:
             last_err = e
             if verbose:
                 print(f"[build] flags={flags} failed: {e}")
             continue
-
-    if not success:
-        raise RuntimeError(f"Failed to compile Cython module: {last_err}")
-
-    sys.path.insert(0, str(build_dir))
-    import block_copy_mt
-    if verbose:
-        print(f"[build] module built at {build_dir}")
-    return block_copy_mt
+    raise RuntimeError(f"compile failed: {last_err}")
 
 
 # ---------------------------------------------------------------------------
-# Benchmark helpers
+# Formatting helpers
 # ---------------------------------------------------------------------------
-def bench(module, total_bytes, block_bytes, n_threads, n_iters=5):
-    """Run the intra-block parallel benchmark; return best bandwidth (GiB/s)."""
-    import numpy as np
+def format_size(num_bytes, decimal_places=2):
+    if num_bytes == 0:
+        return "0 B"
+    units = ["B", "KiB", "MiB", "GiB"]
+    base = 1024
+    size = float(num_bytes)
+    e = 0
+    while size >= base and e < len(units) - 1:
+        size /= base
+        e += 1
+    return f"{size:.{decimal_places}f} {units[e]}"
 
+
+# ---------------------------------------------------------------------------
+# Random block index generation (numpy, C-speed)
+# ---------------------------------------------------------------------------
+def generate_random_indices(num_blocks, n_iters):
+    """Random source and destination block indices, shape (n_iters,)."""
+    src_idx = np.random.randint(0, num_blocks, size=n_iters, dtype=np.intp)
+    dst_idx = np.random.randint(0, num_blocks, size=n_iters, dtype=np.intp)
+    return src_idx, dst_idx
+
+
+# ---------------------------------------------------------------------------
+# Benchmark
+# ---------------------------------------------------------------------------
+def bench(module, src, dst, block_bytes, subchunk_bytes,
+          n_threads, copy_mode, n_iters=500, n_runs=5, warn_short=True):
+    """Return best bandwidth (GiB/s) over n_runs random-index runs."""
+    total_bytes = src.shape[0]
     n_blocks = total_bytes // block_bytes
     if n_blocks == 0:
         raise ValueError("block_bytes > total_bytes")
 
-    src = np.random.randint(0, 256, size=total_bytes, dtype=np.uint8)
-    dst = np.zeros(total_bytes, dtype=np.uint8)
+    fn = module.cython_block_copy_sub
 
-    src_idx = np.arange(n_blocks, dtype=np.intp)
-    dst_idx = np.arange(n_blocks, dtype=np.intp)
-
-    copy_fn = module.cython_block_copy_split
-
-    # Warm-up
-    copy_fn(src, dst, src_idx, dst_idx, block_bytes, n_threads)
+    # Warm-up with the same random workload
+    si, di = generate_random_indices(n_blocks, n_iters)
+    fn(src, dst, si, di, block_bytes, subchunk_bytes, n_threads, copy_mode)
 
     best = 0.0
-    for _ in range(n_iters):
+    for _ in range(n_runs):
+        si, di = generate_random_indices(n_blocks, n_iters)
         t0 = time.perf_counter()
-        copy_fn(src, dst, src_idx, dst_idx, block_bytes, n_threads)
+        fn(src, dst, si, di, block_bytes, subchunk_bytes, n_threads, copy_mode)
         elapsed = time.perf_counter() - t0
-        bw = total_bytes / elapsed / (1024 ** 3)
-        best = max(best, bw)
-    return best
-
-
-def bench_st(module, total_bytes, block_bytes, n_iters=5):
-    """Single-threaded baseline for reference."""
-    import numpy as np
-
-    n_blocks = total_bytes // block_bytes
-    if n_blocks == 0:
-        raise ValueError("block_bytes > total_bytes")
-
-    src = np.random.randint(0, 256, size=total_bytes, dtype=np.uint8)
-    dst = np.zeros(total_bytes, dtype=np.uint8)
-
-    src_idx = np.arange(n_blocks, dtype=np.intp)
-    dst_idx = np.arange(n_blocks, dtype=np.intp)
-
-    copy_fn = module.cython_block_copy_st
-    copy_fn(src, dst, src_idx, dst_idx, block_bytes)
-
-    best = 0.0
-    for _ in range(n_iters):
-        t0 = time.perf_counter()
-        copy_fn(src, dst, src_idx, dst_idx, block_bytes)
-        elapsed = time.perf_counter() - t0
-        bw = total_bytes / elapsed / (1024 ** 3)
+        if warn_short and elapsed < 0.004:
+            print(f"  [warn] run took only {elapsed*1000:.2f} ms; "
+                  f"increase --iters for stable results")
+            warn_short = False
+        bw = (block_bytes * n_iters) / elapsed / (1024 ** 3)
         best = max(best, bw)
     return best
 
 
 def main():
-    import argparse
-
     parser = argparse.ArgumentParser(
-        description="Cython + OpenMP intra-block (split) copy benchmark."
+        description="Random-index block copy bandwidth scan across thread counts."
     )
     parser.add_argument("--size", type=int, default=4 * 1024 ** 3,
-                        help="Total bytes per buffer (default 4 GiB).")
+                        help="Total buffer size in bytes. Default: 4 GiB.")
     parser.add_argument("--block", type=int, default=1 * 1024 ** 2,
-                        help="Block size in bytes (default 1 MiB).")
-    parser.add_argument("--iters", type=int, default=5,
-                        help="Timed iterations per thread count (default 5).")
+                        help="Block size in bytes. Default: 1 MiB.")
+    parser.add_argument("--subchunk", type=int, default=128 * 1024,
+                        help="Sub-chunk size in bytes. Default: 128 KiB.")
     parser.add_argument("--threads", type=int, nargs="+",
-                        default=[1, 2, 4, 8, 16, 32, 64, 128],
-                        help="Thread counts to test.")
+                        default=[1, 2, 4, 8, 12, 16, 20, 24, 28, 32, 36],
+                        help="Thread counts to scan. Default: 1..36.")
+    parser.add_argument("--iters", type=int, default=500,
+                        help="Blocks copied per timed run. Default: 500.")
+    parser.add_argument("--runs", type=int, default=5,
+                        help="Timed runs per config; best is reported. Default: 5.")
+    parser.add_argument("--copy-mode", nargs="+",
+                        choices=["simd", "simd_nt", "memcpy"],
+                        default=["memcpy", "simd", "simd_nt"],
+                        help="Copy backends to test. Default: all three.")
     parser.add_argument("--quiet-build", action="store_true",
                         help="Suppress Cython build output.")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Random seed for reproducible runs.")
     args = parser.parse_args()
 
-    n_blocks = args.size // args.block
-    print(f"PID: {os.getpid()}")
-    print(f"Total: {args.size / 1024**3:.2f} GiB   "
-          f"Block: {args.block / 1024**2:.2f} MiB   "
-          f"Blocks: {n_blocks}   "
-          f"Iters: {args.iters}")
-    print("-" * 60)
+    if args.seed is not None:
+        np.random.seed(args.seed)
+
+    block_bytes = args.block
+    subchunk_bytes = args.subchunk
+    n_blocks = args.size // block_bytes
+    bytes_per_run = args.iters * block_bytes
+    splits = (block_bytes + subchunk_bytes - 1) // subchunk_bytes
+
+    print(f"Buffer:        {format_size(args.size)}")
+    print(f"Block:         {format_size(block_bytes)}  ({n_blocks} blocks)")
+    print(f"Sub-chunk:     {format_size(subchunk_bytes)}  "
+          f"({splits} tasks/block)")
+    print(f"Threads:       {args.threads}")
+    print(f"Iters:         {args.iters} blocks per run  "
+          f"({format_size(bytes_per_run)} copied per run)")
+    print(f"Runs:          {args.runs} (best taken)")
+    print(f"Copy modes:    {', '.join(args.copy_mode)}")
 
     module = build_module(verbose=not args.quiet_build)
+    print(f"OMP max threads: {module.get_omp_max_threads()}")
 
-    print(f"\n{'threads':>8}  {'bandwidth (GiB/s)':>20}")
-    print("-" * 60)
+    # Random-content source avoids kernel zero-page / compression effects.
+    print(f"Allocating {format_size(args.size)} random source + destination...")
+    src = np.random.randint(0, 256, size=args.size, dtype=np.uint8)
+    dst = np.zeros(args.size, dtype=np.uint8)
+    print(f"  src.data % 64 = {src.ctypes.data % 64}")
+    print(f"  dst.data % 64 = {dst.ctypes.data % 64}")
+    print()
 
-    # Single-threaded baseline
-    st_bw = bench_st(module, args.size, args.block, n_iters=args.iters)
-    print(f"{'1 (st)':>8}  {st_bw:>20.2f}")
+    header = ["threads"] + [f"{m} (GiB/s)" for m in args.copy_mode]
+    print(" | ".join(f"{h:>16}" for h in header))
+    print("-" * (18 * len(header)))
 
-    # Intra-block parallel
-    for nt in args.threads:
-        if nt == 1:
-            continue
-        bw = bench(module, args.size, args.block, nt, n_iters=args.iters)
-        print(f"{nt:>8}  {bw:>20.2f}")
+    for T in args.threads:
+        row = [f"{T:>16d}"]
+        for mode in args.copy_mode:
+            cm = COPY_MODES[mode]
+            bw = bench(module, src, dst, block_bytes, subchunk_bytes,
+                       T, cm, n_iters=args.iters, n_runs=args.runs)
+            row.append(f"{bw:>16.2f}")
+        print(" | ".join(row))
+
+    print()
+    print("Notes:")
+    print(f"  - Random block indices; {args.iters} blocks copied per run.")
+    print(f"  - {splits} sub-chunk tasks per block, scheduled by OpenMP.")
+    print("  - On multi-socket hosts, bind with:")
+    print("      numactl --cpunodebind=0 --membind=0")
 
 
 if __name__ == "__main__":
