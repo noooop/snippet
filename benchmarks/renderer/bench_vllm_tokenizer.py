@@ -1,4 +1,8 @@
 
+import os
+
+os.environ["FASTOKENS_BPE_THREADS"] = "0"
+
 import time
 
 from vllm.tokenizers import get_tokenizer

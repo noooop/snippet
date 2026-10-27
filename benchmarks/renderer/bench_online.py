@@ -1,10 +1,10 @@
 import os
 
 os.environ["VLLM_LOGGING_LEVEL"] = "ERROR"
+os.environ["FASTOKENS_BPE_THREADS"] = "0"
 
 import argparse
 import signal
-import socket
 import subprocess
 import time
 
@@ -14,120 +14,6 @@ from concurrent.futures import ProcessPoolExecutor
 
 PORT = 8000
 RENDER_URL = f"http://localhost:{PORT}/v1/completions/render"
-
-
-# --------------------------------------------------------------------------- #
-# Process inspection helpers (Linux /proc only)
-# --------------------------------------------------------------------------- #
-def _iter_proc():
-    """Yield (pid, argv) for every other process on the system."""
-    self_pid = os.getpid()
-    try:
-        entries = os.listdir("/proc")
-    except FileNotFoundError:
-        return
-    for name in entries:
-        if not name.isdigit():
-            continue
-        pid = int(name)
-        if pid == self_pid:
-            continue
-        try:
-            with open(f"/proc/{pid}/cmdline", "rb") as f:
-                raw = f.read()
-        except (FileNotFoundError, ProcessLookupError, PermissionError):
-            continue
-        argv = [p for p in raw.split(b"\x00") if p]
-        yield pid, argv
-
-
-def _read_pgid(pid):
-    """Return pgid of `pid` from /proc/<pid>/stat, or None if gone."""
-    try:
-        with open(f"/proc/{pid}/stat", "rb") as f:
-            data = f.read()
-    except (FileNotFoundError, ProcessLookupError, PermissionError):
-        return None
-    rp = data.rfind(b")")
-    if rp < 0:
-        return None
-    try:
-        # stat fields after ") ": state ppid pgrp ...  -> pgrp is index 2
-        return int(data[rp + 2:].split()[2])
-    except (IndexError, ValueError):
-        return None
-
-
-def _looks_like_render(argv):
-    """Heuristic: does this argv belong to our render-server tree?
-
-    Matches:
-      * `vllm launch render ...`                (launcher)
-      * `... vllm.entrypoints.launchers.render` (renderer entrypoint)
-      * processes whose argv carries the "render" service tag after
-        `set_process_title("APIServer", rank)` rewrote /proc/<pid>/cmdline
-    """
-    if not argv:
-        return False
-    joined = " ".join(p.decode(errors="replace") for p in argv)
-    if "render" not in joined:
-        return False
-    if "vllm" in joined:
-        return True
-    if "APIServer" in joined or "ApiServer" in joined:
-        return True
-    if "launchers.render" in joined:
-        return True
-    return False
-
-
-def find_render_processes(pgids=None):
-    """Return [(pid, pgid, cmdline)] for render-server-looking processes.
-
-    If `pgids` is provided, only processes whose pgid is in that set are
-    returned (used to detect orphans left in a known launcher's group).
-    """
-    hits = []
-    for pid, argv in _iter_proc():
-        if not _looks_like_render(argv):
-            continue
-        pgid = _read_pgid(pid)
-        if pgids is not None and pgid not in pgids:
-            continue
-        cmd = " ".join(p.decode(errors="replace") for p in argv)
-        hits.append((pid, pgid, cmd))
-    return hits
-
-
-def _is_port_free(port):
-    """Probe `port` by attempting to bind; True means it is available."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            s.bind(("127.0.0.1", port))
-            return True
-        except OSError:
-            return False
-
-
-def _report_and_maybe_kill(label, procs, kill=False):
-    """Print a table of `procs` and, if `kill`, SIGKILL their process groups."""
-    if not procs:
-        return
-    print(
-        f"[warn] {label}: {len(procs)} leftover render process(es):",
-        flush=True,
-    )
-    for pid, pgid, cmd in procs:
-        print(f"    pid={pid} pgid={pgid} cmd={cmd[:200]}", flush=True)
-    if not kill:
-        return
-    pgids = {pgid for _, pgid, _ in procs if pgid is not None}
-    for g in pgids:
-        try:
-            os.killpg(g, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
 
 
 # --------------------------------------------------------------------------- #
@@ -274,31 +160,6 @@ def _shutdown_server(proc, term_timeout=15.0, kill_timeout=10.0):
 
 
 def run(args):
-    # ---- Pre-flight: clean up a dirty environment ------------------------- #
-    pre = find_render_processes()
-    if pre:
-        _report_and_maybe_kill(
-            "pre-flight leftover render process(es)",
-            pre,
-            kill=args.kill_leftovers,
-        )
-        if args.kill_leftovers:
-            time.sleep(1)
-            remaining = find_render_processes()
-            if remaining:
-                print(
-                    f"[warn] pre-flight: {len(remaining)} process(es) survived SIGKILL",
-                    flush=True,
-                )
-            else:
-                print("[info] pre-flight: leftover render processes cleaned", flush=True)
-
-    if not _is_port_free(PORT):
-        raise RuntimeError(
-            f"port {PORT} is already in use; an orphaned render server may be "
-            f"holding it (rerun with --kill-leftovers to auto-clean)"
-        )
-
     # ---- Sweep ----------------------------------------------------------- #
     for num_workers in args.renderer_num_workers_list:
         for api_server_count in args.api_server_count_list:
@@ -313,27 +174,11 @@ def run(args):
                 args.api_server_count = api_server_count
                 proc = run_server(args)
                 wait(args, proc)
+                time.sleep(10)
                 benchmark(args)
             finally:
                 if proc is not None:
-                    # start_new_session=True -> pgid == launcher pid.
-                    # After _shutdown_server() reaps the launcher, any process
-                    # still alive in this pgid is by definition an orphan.
-                    pgid = proc.pid
                     _shutdown_server(proc)
-                    orphans = find_render_processes(pgids={pgid})
-                    _report_and_maybe_kill(
-                        f"orphans after sweep (pgid={pgid})",
-                        orphans,
-                        kill=True,
-                    )
-                    if not _is_port_free(PORT):
-                        print(
-                            f"[warn] port {PORT} still busy after sweep "
-                            f"(possible surviving connection/process)",
-                            flush=True,
-                        )
-
 
 # --------------------------------------------------------------------------- #
 # CLI
